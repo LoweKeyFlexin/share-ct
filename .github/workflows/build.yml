@@ -138,7 +138,9 @@ jobs:
           grep -q '"msg":"starting"' first-boot.log
           grep -q '"database_path":"/data/leaderboard.db"' first-boot.log
           grep -q '"msg":"migrations","applied":2,"from":0,"to":2' first-boot.log
-          grep -q '"msg":"listening","addr":"0.0.0.0:8080"' first-boot.log
+          # Go on Linux reports the 0.0.0.0 wildcard as the dual-stack socket [::]:8080;
+          # either spelling is "every interface, port 8080", which is what the tunnel needs.
+          grep -Eq '"msg":"listening","addr":"(0\.0\.0\.0|\[::\]):8080"' first-boot.log
           test -f data/leaderboard.db
 
       # A restart proves the migrations are idempotent on a populated /data and that

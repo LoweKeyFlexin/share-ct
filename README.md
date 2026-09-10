@@ -42,7 +42,7 @@ Logs are JSON lines on stdout, one object per line. Every boot prints, in order:
 ```
 {"msg":"starting","version":"…","commit":"…","go":"go1.23.x","database_path":"/data/leaderboard.db","listen_addr":"0.0.0.0:8080"}
 {"msg":"migrations","applied":2,"from":0,"to":2}     ← applied is 0 on every later boot
-{"msg":"listening","addr":"0.0.0.0:8080"}
+{"msg":"listening","addr":"[::]:8080"}               ← Linux reports the 0.0.0.0 wildcard as the dual-stack [::]
 ```
 
 Per request: method, path, status, bytes, ms. Never a query string, header, body or token.
