@@ -1,0 +1,11 @@
+# local runs and the CI smoke job's bind mount
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# binaries
+/sharect
+/bin/
+/dist/

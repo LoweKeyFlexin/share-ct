@@ -1,0 +1,166 @@
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Cross-compiles for the Pi without cgo
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /dev/null ./cmd/sharect
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image name (GHCR requires lowercase)
+        id: names
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build linux/arm64 (pull request, not pushed)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: sharect:pr
+          build-args: |
+            COMMIT=${{ github.sha }}
+            VERSION=pr-${{ github.event.number }}
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push linux/arm64 (main)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.names.outputs.image }}:latest
+            ${{ steps.names.outputs.image }}:sha-${{ steps.names.outputs.short }}
+          build-args: |
+            COMMIT=${{ github.sha }}
+            VERSION=sha-${{ steps.names.outputs.short }}
+
+      - name: Pick the image to smoke (the pushed :latest on main, the local build on a PR)
+        id: smoke
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            image="${{ steps.names.outputs.image }}:latest"
+            docker pull --platform linux/arm64 "$image"
+          else
+            image=sharect:pr
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      # Runs the image exactly the way Will's compose entry does: arm64 under QEMU, UID/GID
+      # 2000, read-only root, tmpfs /tmp, /data bind-mounted and owned by 2000, port 8080,
+      # DATABASE_PATH as the only env. The four first-deploy failures from the hosting
+      # handoff (arch, write outside /data, port, env) all fail here, not on the Pi.
+      - name: Smoke — run as Will does
+        env:
+          IMAGE: ${{ steps.smoke.outputs.image }}
+        run: |
+          set -euo pipefail
+          mkdir -p data && sudo chown 2000:2000 data
+          docker run -d --name smoke --platform linux/arm64 --user 2000:2000 --read-only \
+            --tmpfs /tmp -v "$PWD/data:/data" -p 8080:8080 \
+            -e DATABASE_PATH=/data/leaderboard.db "$IMAGE"
+
+          wait_ok() {
+            for _ in $(seq 1 60); do
+              if [ "$(curl -fsS localhost:8080/healthz 2>/dev/null || true)" = ok ]; then return 0; fi
+              sleep 1
+            done
+            return 1
+          }
+          wait_ok || { echo "::error::/healthz never answered ok within 60 s"; exit 1; }
+          echo "healthz: ok"
+
+          board=$(curl -fsS localhost:8080/v1/board)
+          echo "board: $board"
+          [ "$board" = '{"source":"touch","window":"all","entries":[]}' ]
+
+          page=$(curl -fsS localhost:8080/)
+          echo "$page" | grep -q 'Share CT · BETA · MAY GO DOWN'
+          echo "$page" | grep -q 'Reaction leaderboard coming soon'
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' localhost:8080/nope)
+          [ "$code" = 404 ] || { echo "::error::GET /nope returned $code, want 404"; exit 1; }
+
+          echo "container HEALTHCHECK command:"
+          docker exec smoke /sharect -healthcheck
+
+          docker logs smoke > first-boot.log 2>&1
+          echo "--- first boot ---"; cat first-boot.log
+          grep -q '"msg":"starting"' first-boot.log
+          grep -q '"database_path":"/data/leaderboard.db"' first-boot.log
+          grep -q '"msg":"migrations","applied":2,"from":0,"to":2' first-boot.log
+          grep -q '"msg":"listening","addr":"0.0.0.0:8080"' first-boot.log
+          test -f data/leaderboard.db
+
+      # A restart proves the migrations are idempotent on a populated /data and that
+      # SIGTERM drains cleanly (docker restart sends SIGTERM, then SIGKILL after 10 s).
+      - name: Smoke — restart is a no-op migration and a clean shutdown
+        run: |
+          set -euo pipefail
+          docker restart --time 10 smoke
+          for _ in $(seq 1 60); do
+            if [ "$(curl -fsS localhost:8080/healthz 2>/dev/null || true)" = ok ]; then break; fi
+            sleep 1
+          done
+          docker logs smoke > second-boot.log 2>&1
+          echo "--- both boots ---"; cat second-boot.log
+          grep -q '"msg":"shutting down"' second-boot.log
+          grep -q '"msg":"stopped"' second-boot.log
+          [ "$(grep -c '"msg":"migrations"' second-boot.log)" = 2 ]
+          grep -q '"msg":"migrations","applied":0,"from":2,"to":2' second-boot.log
+          [ "$(curl -fsS localhost:8080/healthz)" = ok ]
+
+      - name: Container logs and cleanup
+        if: always()
+        run: |
+          docker logs smoke 2>&1 || true
+          docker rm -f smoke >/dev/null 2>&1 || true
