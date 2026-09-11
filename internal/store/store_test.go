@@ -95,7 +95,7 @@ func TestMigrateAppliesOnceThenNoOps(t *testing.T) {
 		t.Fatalf("second run = %+v, want applied 0, %d -> %d", second, last, last)
 	}
 
-	for _, table := range []string{"schema_migrations", "players"} {
+	for _, table := range []string{"schema_migrations", "players", "submissions"} {
 		var n int
 		const q = `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`
 		if err := s.db.QueryRowContext(ctx, q, table).Scan(&n); err != nil || n != 1 {

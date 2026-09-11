@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LoweKeyFlexin/share-ct/internal/leaderboard"
 	"github.com/LoweKeyFlexin/share-ct/internal/server"
 	"github.com/LoweKeyFlexin/share-ct/internal/store"
 	"github.com/LoweKeyFlexin/share-ct/migrations"
@@ -107,7 +106,7 @@ func run(log *slog.Logger, listenAddr string) error {
 	}
 	log.Info("migrations", "applied", res.Applied, "from", res.From, "to", res.To)
 
-	return serve(ctx, log, listenAddr, server.New(log, db.Ping, leaderboard.Handler()))
+	return serve(ctx, log, listenAddr, server.New(log, db, time.Now))
 }
 
 // serve binds listenAddr, logs the bound address, and shuts down gracefully when ctx ends.
