@@ -119,7 +119,7 @@ const indexHead = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Share CT · BETA · MAY GO DOWN</title>
+<title>Fighter CT · Reaction Leaderboard</title>
 <style>
   :root {
     color-scheme: dark;
@@ -128,11 +128,16 @@ const indexHead = `<!doctype html>
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width:44rem; margin:0 auto; padding:clamp(2rem, 8vh, 5rem) 1.25rem 4rem; }
+  main { max-width:52rem; margin:0 auto; padding:clamp(2rem, 8vh, 5rem) 1.25rem 4rem; }
   header h1 { font-size:clamp(2.4rem, 7vw, 3.6rem); line-height:1; margin:0; letter-spacing:.02em; }
   .beta { display:inline-block; margin:.75rem 0 0; border:1px solid var(--warn); color:var(--warn); border-radius:.35rem; padding:.15rem .65rem; font-size:.74rem; font-weight:700; letter-spacing:.16em; }
   header p { color:var(--dim); margin:1rem 0 0; max-width:34rem; }
-  .panel { margin-top:2.25rem; background:var(--panel); border:1px solid var(--line); border-radius:.9rem; overflow:hidden; }
+  .panel { margin-top:2.25rem; background:var(--panel); border:1px solid var(--line); border-radius:.9rem; }
+  /* The table was 800px inside a 702px panel at 1024px wide and the panel clipped it, so
+     PLATFORM was cut off on an iPad with no way to scroll to it. Wide content scrolls in
+     its own box; the page body never does. */
+  .scroller { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:0 0 .9rem .9rem; }
+  .note { font-size:.8rem; }
   .panel h2 { margin:0; padding:1.1rem 1.25rem .5rem; font-size:.8rem; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); }
   .tabs { display:flex; gap:.4rem; flex-wrap:wrap; padding:0 1.25rem; }
   .tabs + .tabs { padding-top:.5rem; }
@@ -160,7 +165,14 @@ const indexHead = `<!doctype html>
   /* Narrow: drop PLATFORM and TIER, never BEST. The time is the headline of a reaction
      board, and the avg/accuracy sub-line lives in that cell — hiding it took half of what
      the row is for off every phone. */
-  @media (max-width: 34rem) { td.platform, th.platform, td.tier, th.tier { display:none; } th, td { padding-inline:.9rem; } }
+  @media (max-width: 52rem) { td.platform, th.platform { display:none; } }
+  @media (max-width: 34rem) {
+    td.tier, th.tier { display:none; }
+    th, td { padding-inline:.9rem; }
+    /* Let the player cell wrap on a phone: its width is set by the longest unwrapped
+       line, and a name plus a device sub-line pushed the table 149px past the screen. */
+    td.name, td.best { white-space:normal; }
+  }
   footer { margin-top:2rem; color:var(--mute); font-size:.85rem; }
   footer p { margin:.25rem 0; }
 </style>
@@ -168,7 +180,7 @@ const indexHead = `<!doctype html>
 <body>
 <main>
   <header>
-    <h1>Share CT</h1>
+    <h1>Fighter CT</h1>
     <span class="beta">BETA · MAY GO DOWN</span>
     <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
   </header>
@@ -184,16 +196,18 @@ const indexHead = `<!doctype html>
       <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
     </nav>
     <p id="status" role="status" aria-live="polite"></p>
+    <div class="scroller">
     <table id="board" hidden>
-      <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="best">Best</th><th>Tier</th><th class="platform">Platform</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="best">Best</th><th class="tier">Tier</th><th class="platform">Platform</th></tr></thead>
       <tbody></tbody>
     </table>
+    </div>
   </section>
   <footer>
-    <p>Three boards, never mixed: a screen, a pad and a keyboard each add their own latency.</p>
     <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
     <p>Scores are recomputed on the server from the attempt timings. No accounts, no tracking; erase your data from the app.</p>
+    <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>
 <script>`

@@ -68,7 +68,7 @@ func TestIndexPage(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("content-type %q, want text/html", ct)
 	}
-	for _, want := range []string{"Share CT · BETA · MAY GO DOWN", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
+	for _, want := range []string{"Fighter CT · Reaction Leaderboard", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
