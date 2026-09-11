@@ -153,13 +153,17 @@ const boardScript = `(function () {
     board_.hidden = false;
   }
 
-  // Sort and window rank a board; a feed is chronological, so they are disabled there
-  // rather than silently ignored. Called on every change AND at load — the feed is the
-  // default view, so a rule that only ran on a click left them live on first paint.
+  // Sort and window rank a board. A feed is chronological, so on RECENT they do not apply
+  // and are HIDDEN rather than disabled — Aaron: "with recent selected, the 'Fastest and
+  // All time' filters being exposed below are confusing". A greyed-out control still asks
+  // to be read and still asks why it is off; an absent one asks nothing. Called on every
+  // change AND at load, since the feed is the default view.
   function syncControls() {
     var feedNow = state.source === 'recent';
+    var minor = document.querySelector('.tabs.minor');
+    if (minor) { minor.hidden = feedNow; }
     Array.prototype.forEach.call(document.querySelectorAll('[data-sort], [data-window]'), function (b) {
-      b.disabled = feedNow;
+      b.disabled = feedNow;   // belt and braces: hidden controls are also not operable
     });
   }
 
@@ -208,7 +212,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".03"
+const pageVersion = ".04"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -300,6 +304,11 @@ const indexHead = `<!doctype html>
   .controls { position:sticky; top:0; z-index:2; background:var(--panel);
               padding:.25rem 1.25rem .7rem; border-bottom:1px solid var(--line); }
   .tabs { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; }
+  /* An author display rule beats the UA stylesheet, so .tabs{display:flex} silently
+     defeated the hidden attribute: the element reported hidden===true and still
+     rendered at full height. Caught by measuring offsetParent, not by reading the
+     attribute back. */
+  .tabs[hidden] { display:none; }
   .tabs + .tabs { padding-top:.35rem; }
   .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
                  background:var(--well); border:1px solid var(--line); border-radius:.3rem;

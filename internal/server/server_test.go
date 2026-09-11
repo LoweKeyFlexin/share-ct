@@ -347,6 +347,19 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 			t.Errorf("missing medal style for %s", m)
 		}
 	}
+	// Sort and window do not apply to a feed, so they are hidden there rather than greyed
+	// out. A visible-but-disabled control still asks to be read and still asks why it is
+	// off - Aaron: "with recent selected, the 'Fastest and All time' filters being exposed
+	// below are confusing". The CSS rule matters as much as the attribute: an author
+	// display rule beats the UA stylesheet, so .tabs{display:flex} silently defeated
+	// [hidden] until .tabs[hidden] was added.
+	if !strings.Contains(body, ".tabs[hidden] { display:none; }") {
+		t.Error("hidden must actually hide: .tabs{display:flex} overrides the UA [hidden] rule")
+	}
+	if !strings.Contains(body, "minor.hidden = feedNow") {
+		t.Error("the sort and window row must hide on the feed")
+	}
+
 	// Every attempt of the run is rendered, not just the best one.
 	if !strings.Contains(body, "e.attempts_ms") {
 		t.Error("a row must show the run behind it")
