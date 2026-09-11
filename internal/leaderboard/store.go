@@ -137,7 +137,31 @@ func nullable(s string) any {
 	return s
 }
 
-// Entry is one board row (design brief §D).
+// The two board orders (M1 delta §2). Fastest is the default: Aaron's pick A ranks the
+// fastest single attempt, on the app's local board and here alike, so a bare /v1/board
+// and the app agree about who is first. Score keeps the M0 order.
+const (
+	SortFastest = "fastest"
+	SortScore   = "score"
+)
+
+// ValidSort reports whether s is fastest or score.
+func ValidSort(s string) bool { return s == SortFastest || s == SortScore }
+
+// orderBy is the ORDER BY list for sort over the columns of alias (a table alias with
+// its dot, or "" for bare columns). Callers check ValidSort first; anything but score is
+// fastest here. Ties break the same way under both: the other measure, then the earlier
+// created_at, then id.
+func orderBy(sort, alias string) string {
+	if sort == SortScore {
+		return alias + "score DESC, " + alias + "best_ms ASC, " + alias + "created_at ASC, " + alias + "id ASC"
+	}
+	return alias + "best_ms ASC, " + alias + "score DESC, " + alias + "created_at ASC, " + alias + "id ASC"
+}
+
+// Entry is one board row (design brief §D, M1 delta §1). DeviceLabel and CreatedAt are
+// the winning submission's, not the player's latest: the row says which pad set the
+// score, and when.
 type Entry struct {
 	Rank        int     `json:"rank"`
 	PlayerShort string  `json:"player_short"`
@@ -148,25 +172,33 @@ type Entry struct {
 	Accuracy    float64 `json:"accuracy"`
 	Tier        string  `json:"tier"`
 	Platform    string  `json:"platform"`
+	DeviceLabel string  `json:"device_label"`
+	CreatedAt   string  `json:"created_at"` // RFC 3339, UTC
 }
 
-// bestPerPlayer numbers each player's submissions on one source from best to worst:
-// score first, then the lower best_ms, then the earlier created_at, then id. Row 1 is
-// the one the board shows. The same ordering ranks the board itself.
-const bestPerPlayer = `
-	SELECT s.id, s.player_id, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.created_at,
-	       ROW_NUMBER() OVER (PARTITION BY s.player_id
-	                          ORDER BY s.score DESC, s.best_ms ASC, s.created_at ASC, s.id ASC) AS rn
+// bestPerPlayer numbers each player's submissions on one source from best to worst in
+// sort's order; row 1 is the one the board shows. The same order ranks the board itself,
+// so the row shown is the row the ranking is about: under fastest a player's slower,
+// higher-scoring trial is not their entry, and neither is its pad.
+func bestPerPlayer(sort string) string {
+	return `
+	SELECT s.id, s.player_id, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.device_label, s.created_at,
+	       ROW_NUMBER() OVER (PARTITION BY s.player_id ORDER BY ` + orderBy(sort, "s.") + `) AS rn
 	FROM submissions s
 	WHERE s.source = ? AND s.created_at >= ?`
+}
 
-// Board is the top limit players on source within window, one row per player.
-func (s *Store) Board(ctx context.Context, source, window string, limit int) ([]Entry, error) {
-	const q = `WITH best AS (` + bestPerPlayer + `)
-	  SELECT b.player_id, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform
+// Board is the top limit players on source within window, one row per player, in
+// sort's order. An unknown sort is an error, never a fallback.
+func (s *Store) Board(ctx context.Context, source, window, sort string, limit int) ([]Entry, error) {
+	if !ValidSort(sort) {
+		return nil, fmt.Errorf("board: unknown sort %q", sort)
+	}
+	q := `WITH best AS (` + bestPerPlayer(sort) + `)
+	  SELECT b.player_id, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform, b.device_label, b.created_at
 	  FROM best b JOIN players p ON p.id = b.player_id
 	  WHERE b.rn = 1
-	  ORDER BY b.score DESC, b.best_ms ASC, b.created_at ASC, b.id ASC
+	  ORDER BY ` + orderBy(sort, "b.") + `
 	  LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, q, source, s.since(window), limit)
 	if err != nil {
@@ -177,12 +209,16 @@ func (s *Store) Board(ctx context.Context, source, window string, limit int) ([]
 	for rows.Next() {
 		var e Entry
 		var playerID string
-		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform); err != nil {
+		var label sql.NullString // "" was stored as NULL
+		var created int64
+		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform, &label, &created); err != nil {
 			return nil, err
 		}
 		e.Rank = len(entries) + 1
 		e.PlayerShort = players.Short(playerID)
 		e.Tier = TierName(e.BestMs)
+		e.DeviceLabel = label.String
+		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
@@ -196,27 +232,18 @@ func (s *Store) since(window string) int64 {
 	return 0
 }
 
-// Rank is the player's position on source's all-time board and the board's size.
-// rank is 0 when the player has no submission there.
+// Rank is the player's position on source's all-time board in the default (fastest)
+// order, and the board's size; rank is 0 when the player has no submission there. It is
+// what POST /v1/scores answers, so it has to agree with a bare GET /v1/board.
 func (s *Store) Rank(ctx context.Context, source, playerID string) (rank, size int, err error) {
-	const q = `WITH best AS (` + bestPerPlayer + `),
-	  top AS (SELECT id, player_id, score, best_ms, created_at FROM best WHERE rn = 1),
-	  me  AS (SELECT * FROM top WHERE player_id = ?)
-	  SELECT (SELECT count(*) FROM top),
-	         (SELECT count(*) FROM me),
-	         (SELECT count(*) FROM top t, me
-	           WHERE t.score > me.score
-	              OR (t.score = me.score AND t.best_ms < me.best_ms)
-	              OR (t.score = me.score AND t.best_ms = me.best_ms AND t.created_at < me.created_at)
-	              OR (t.score = me.score AND t.best_ms = me.best_ms AND t.created_at = me.created_at AND t.id < me.id))`
-	var present, ahead int
-	if err := s.db.QueryRowContext(ctx, q, source, 0, playerID).Scan(&size, &present, &ahead); err != nil {
+	q := `WITH best AS (` + bestPerPlayer(SortFastest) + `),
+	  top AS (SELECT player_id, ROW_NUMBER() OVER (ORDER BY ` + orderBy(SortFastest, "") + `) AS pos
+	          FROM best WHERE rn = 1)
+	  SELECT (SELECT count(*) FROM top), COALESCE((SELECT pos FROM top WHERE player_id = ?), 0)`
+	if err := s.db.QueryRowContext(ctx, q, source, 0, playerID).Scan(&size, &rank); err != nil {
 		return 0, 0, fmt.Errorf("rank: %w", err)
 	}
-	if present == 0 {
-		return 0, size, nil
-	}
-	return ahead + 1, size, nil
+	return rank, size, nil
 }
 
 // Bests is a player's best submission per source and their submission count; it

@@ -24,7 +24,10 @@ tracking. Players can rename or erase their data from the app.
 ## Status
 
 M0 scoring API: players (register, rename, erase), score submission with a server-side
-recompute, the board, and a front page that renders it. The app repo is private; this one
+recompute, the board, and a front page that renders it. M1: the board ranks the fastest
+single attempt by default and each row carries the winning submission's `device_label` and
+`created_at`; erase answers `404` for a player already gone; a score body with an
+undeclared field is refused. The app repo is private; this one
 is public so the server's behaviour is inspectable and the image builds for free.
 
 ## Run
@@ -41,7 +44,7 @@ Logs are JSON lines on stdout, one object per line. Every boot prints, in order:
 
 ```
 {"msg":"starting","version":"…","commit":"…","go":"go1.23.x","database_path":"/data/leaderboard.db","listen_addr":"0.0.0.0:8080"}
-{"msg":"migrations","applied":4,"from":0,"to":4}     ← applied is 0 on every later boot
+{"msg":"migrations","applied":5,"from":0,"to":5}     ← applied is 0 on every later boot
 {"msg":"listening","addr":"[::]:8080"}               ← Linux reports the 0.0.0.0 wildcard as the dual-stack [::]
 ```
 
@@ -98,8 +101,10 @@ the same image and smoke it without pushing.
 Every body is JSON, capped at 4 KB. Errors are `{"error":"<code>"}`; a body that parsed
 but broke a rule is `422 {"error":"invalid","reason":"<rule>"}`; a bad query is
 `400 {"error":"bad_request","reason":"<param>"}`; over a limit is `429` with `Retry-After`
-in seconds. Authenticated routes take `Authorization: Bearer <token>`: `401` without a
-valid token, `403` for another player's id.
+in seconds. `POST /v1/scores` is decoded strictly: a key it does not declare is
+`422 {"error":"invalid","reason":"unknown_field"}`, never silently dropped. Authenticated
+routes take `Authorization: Bearer <token>`: `401` without a valid token, `403` for another
+player's id.
 
 | Route | Auth | Response |
 | --- | --- | --- |
@@ -108,9 +113,9 @@ valid token, `403` for another player's id.
 | `POST /v1/players` | – | `201 {player_id, token}` |
 | `GET /v1/players/{id}` | – | `200 {player_id, player_short, display_name, platform, best:{touch,pad,keyboard}, submissions, created_at}` |
 | `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
-| `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased |
-| `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id` |
-| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform}]}` |
+| `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased; `404` when the id is unknown, an already-erased player included, which the app treats as finished too |
+| `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
+| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
 | anything else | – | `404 {"error":"not_found"}` |
 
 ### Register a player
@@ -139,13 +144,21 @@ curl -sS -X PATCH https://ct.bond-haus.com/v1/players/$PLAYER \
   -d '{"display_name":"Aaron L"}'
 
 curl -sS -X DELETE https://ct.bond-haus.com/v1/players/$PLAYER \
-  -H "Authorization: Bearer $TOKEN"          # 204: "delete my data"
+  -H "Authorization: Bearer $TOKEN"          # 204: "delete my data"; 404 once it is gone
 
 curl -sS https://ct.bond-haus.com/v1/players/$PLAYER
 # {"player_id":"…","player_short":"3A4B","display_name":"Aaron","platform":"ios",
 #  "best":{"touch":{"score":2100,"best_ms":200,"avg_ms":205,"accuracy":1,"tier":"DIAMOND","platform":"ios","created_at":1800000000},
 #          "pad":null,"keyboard":null},"submissions":1,"created_at":1800000000}
 ```
+
+`DELETE` answers `204` when the player and every submission were erased, and `404` when the
+id names no player, an already-erased one included. The app runs the erase as a job it
+retries until it hears one of those two and treats both as finished: the token dies with
+the row, so a retry after a lost `204` arrives without valid credentials, and a `401` there
+would keep it retrying forever with credentials kept for a player that no longer exists. A
+live player's id still needs its own token: `401` without a valid one, `403` with another
+player's, never `404`, so a wrong token is never mistaken for "nothing to delete".
 
 ### Submit a score
 
@@ -164,6 +177,14 @@ curl -sS -X POST https://ct.bond-haus.com/v1/scores \
 # 201 {"submission_id":17,"rank":1,"board_size":12}
 ```
 
+The body is exactly these twelve keys: `client_id`, `source`, `best_ms`, `avg_ms`,
+`accuracy`, `score`, `attempts_ms`, `misfires`, `app_build`, `platform`, `device_model`,
+`device_label`. Any other key is `422 {"error":"invalid","reason":"unknown_field"}`: the
+app's disclosure sheet promises its users exactly what leaves the phone, and refusing an
+undeclared key is what keeps the two sides from drifting quietly. `rank` and `board_size`
+in the reply are on the source's all-time board in its default `fastest` order, so they
+match what a bare `GET /v1/board` shows.
+
 Bounds, each a 422 `reason`:
 
 | reason | rule |
@@ -181,12 +202,32 @@ minute per player, 60 a minute per IP (`CF-Connecting-IP` behind the tunnel).
 ### Read the board
 
 ```sh
-curl -sS 'https://ct.bond-haus.com/v1/board?source=pad&window=30d&limit=10'
+curl -sS 'https://ct.bond-haus.com/v1/board?source=pad&window=30d&sort=fastest&limit=10'
 # {"source":"pad","window":"30d","entries":[
 #   {"rank":1,"player_short":"3A4B","display_name":"Aaron","score":2220,"best_ms":170,"avg_ms":175,
-#    "accuracy":1,"tier":"LEGEND","platform":"ios"}]}
+#    "accuracy":1,"tier":"LEGEND","platform":"ios",
+#    "device_label":"DualSense Wireless Controller","created_at":"2026-09-11T03:00:00Z"}]}
 ```
 
-`source` defaults to `touch`, `window` (`all` or `30d`) to `all`, `limit` to 50 (max 100).
-One row per player, their best submission; ties go to the lower `best_ms`, then the earlier
-submission. The three sources never share a ranking. `entries` is always an array.
+`source` defaults to `touch`, `window` (`all` or `30d`) to `all`, `sort` to `fastest`,
+`limit` to 50 (max 100). One row per player, their winning submission under the sort. The
+three sources never share a ranking. `entries` is always an array.
+
+| `sort` | order |
+| --- | --- |
+| `fastest` (default) | `best_ms` ascending; ties to the higher `score`, then the earlier submission |
+| `score` | `score` descending; ties to the lower `best_ms`, then the earlier submission |
+
+The default is `fastest` because that is how the app ranks its own local board (the fastest
+single attempt), and a bare `/v1/board` must agree with the app about who is first. An
+unknown `sort` is `400 {"error":"bad_request","reason":"sort"}`, never a fallback: a typo
+that quietly returned a different order would be indistinguishable from the board being
+wrong. Migration `005` adds `ix_sub_fastest ON submissions(source, best_ms ASC, score DESC,
+created_at)`, the fastest order's index; `ix_sub_board` still serves `sort=score`.
+
+`device_label` and `created_at` (RFC 3339, UTC, stamped by the server on arrival) belong
+to the **winning submission**, the row the entry is ranked by, not to the player's latest:
+a player whose best was set on a pad and who later played a worse trial on touch is listed
+with the pad. Under `sort=score` the winning row is the highest-scoring one, so the label
+and time can differ between the two sorts. `device_label` is `""` when the submission
+carried none.

@@ -388,7 +388,7 @@ func TestBoardParamsAndEmpty(t *testing.T) {
 	if want := `{"source":"touch","window":"all","entries":[]}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("empty board: %d %q, want %q", rec.Code, rec.Body.String(), want)
 	}
-	for _, q := range []string{"?source=mouse", "?window=7d", "?limit=abc", "?limit=0", "?limit=-1"} {
+	for _, q := range []string{"?source=mouse", "?window=7d", "?sort=fastst", "?limit=abc", "?limit=0", "?limit=-1"} {
 		rec, out := hs.do("GET", "/v1/board"+q, "", "", "")
 		if rec.Code != 400 || out["error"] != "bad_request" || out["reason"] == nil {
 			t.Errorf("%s: got %d %s, want 400 bad_request with a reason", q, rec.Code, rec.Body.String())
