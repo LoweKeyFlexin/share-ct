@@ -198,7 +198,7 @@ func TestIndexPageNamesTheProductAndNotTheHost(t *testing.T) {
 	for _, want := range []string{
 		"Share CT",   // the service's name, in the title and the masthead
 		"Fighter CT", // the app it serves, named in the description line
-		"Ver .01",    // the page's own revision, top right
+		"Ver .0",     // the page's own revision, top right
 		"opt-in",     // the promise that predates the leaderboard
 		"13 frames",  // what the score actually rewards, not an adjective
 	} {

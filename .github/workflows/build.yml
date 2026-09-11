@@ -18,9 +18,32 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # the revision guard below diffs against the previous commit
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+      - name: The page's revision number moves when the page does
+        # pageVersion is hand-bumped, and a hand-bumped number is forgotten. It was: the
+        # mixed board, the run breakdown and the sticky controls all shipped under Ver .01
+        # because the bump is a separate act from the change. Aaron noticed before we did -
+        # "I think it looks different, but I can't tell because the ver number didn't
+        # increment" - which is exactly what the number is FOR. So the guard is mechanical.
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-list --count HEAD)" -lt 2 ]; then echo "shallow; skipping"; exit 0; fi
+          if git diff --quiet HEAD~1 HEAD -- internal/server/page.go; then
+            echo "page.go unchanged; no bump required"; exit 0
+          fi
+          before=$(git show HEAD~1:internal/server/page.go | grep -oE 'pageVersion = "[^"]*"' || true)
+          after=$(grep -oE 'pageVersion = "[^"]*"' internal/server/page.go || true)
+          echo "before: ${before:-<none>}"
+          echo "after:  ${after:-<none>}"
+          if [ "$before" = "$after" ]; then
+            echo "::error::internal/server/page.go changed but pageVersion did not. A reader cannot tell the page updated."
+            exit 1
+          fi
+
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
