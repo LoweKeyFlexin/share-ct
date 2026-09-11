@@ -125,7 +125,7 @@ jobs:
 
           page=$(curl -fsS localhost:8080/)
           echo "$page" | grep -q 'Share CT · BETA · MAY GO DOWN'
-          echo "$page" | grep -q 'Reaction leaderboard coming soon'
+          echo "$page" | grep -q '/v1/board?source='
 
           code=$(curl -sS -o /dev/null -w '%{http_code}' localhost:8080/nope)
           [ "$code" = 404 ] || { echo "::error::GET /nope returned $code, want 404"; exit 1; }
@@ -137,14 +137,61 @@ jobs:
           echo "--- first boot ---"; cat first-boot.log
           grep -q '"msg":"starting"' first-boot.log
           grep -q '"database_path":"/data/leaderboard.db"' first-boot.log
-          grep -q '"msg":"migrations","applied":2,"from":0,"to":2' first-boot.log
+          grep -q '"msg":"migrations","applied":4,"from":0,"to":4' first-boot.log
           # Go on Linux reports the 0.0.0.0 wildcard as the dual-stack socket [::]:8080;
           # either spelling is "every interface, port 8080", which is what the tunnel needs.
           grep -Eq '"msg":"listening","addr":"(0\.0\.0\.0|\[::\]):8080"' first-boot.log
           test -f data/leaderboard.db
 
-      # A restart proves the migrations are idempotent on a populated /data and that
-      # SIGTERM drains cleanly (docker restart sends SIGTERM, then SIGKILL after 10 s).
+      # One player, one score, one board read, against the running container. The
+      # attempt set is the parity fixture's "clean fast trial" (200/205/210 ms, no
+      # misfires): the server must recompute it to 2100 (DIAMOND, 12.0 frames), refuse a
+      # lied score, and treat a retried client_id as the same submission.
+      - name: Smoke — register, submit, read the board
+        run: |
+          set -euo pipefail
+          api=localhost:8080
+          reg=$(curl -fsS -X POST "$api/v1/players" -H 'Content-Type: application/json' \
+                -d '{"display_name":"Smoke","platform":"ios"}')
+          echo "register: $reg"
+          player=$(echo "$reg" | jq -er .player_id)
+          token=$(echo "$reg" | jq -er .token)
+          [ "${#token}" = 43 ]
+
+          body='{"client_id":"smoke-1","source":"touch","best_ms":200,"avg_ms":205,"accuracy":1,"score":2100,"attempts_ms":[200,205,210],"misfires":0,"app_build":"ci","platform":"ios","device_model":"ci","device_label":"Touch"}'
+          sub=$(curl -fsS -X POST "$api/v1/scores" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body")
+          echo "submit: $sub"
+          [ "$(echo "$sub" | jq -r .rank)" = 1 ]
+          [ "$(echo "$sub" | jq -r .board_size)" = 1 ]
+
+          lied=$(echo "$body" | sed 's/"score":2100/"score":2101/')
+          code=$(curl -sS -o lied.json -w '%{http_code}' -X POST "$api/v1/scores" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$lied")
+          echo "lied score: $code $(cat lied.json)"
+          [ "$code" = 422 ] && [ "$(jq -r .reason lied.json)" = score_mismatch ]
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$api/v1/scores" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body")
+          [ "$code" = 200 ] || { echo "::error::retried client_id returned $code, want 200"; exit 1; }
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$api/v1/scores" -H 'Content-Type: application/json' -d "$body")
+          [ "$code" = 401 ] || { echo "::error::no token returned $code, want 401"; exit 1; }
+
+          board=$(curl -fsS "$api/v1/board?source=touch")
+          echo "board: $board"
+          [ "$(echo "$board" | jq -r '.entries | length')" = 1 ]
+          [ "$(echo "$board" | jq -r '.entries[0].score')" = 2100 ]
+          [ "$(echo "$board" | jq -r '.entries[0].best_ms')" = 200 ]
+          [ "$(echo "$board" | jq -r '.entries[0].avg_ms')" = 205 ]
+          [ "$(echo "$board" | jq -r '.entries[0].tier')" = DIAMOND ]
+          [ "$(echo "$board" | jq -r '.entries[0].display_name')" = Smoke ]
+          [ "$(curl -fsS "$api/v1/board?source=pad" | jq -r '.entries | length')" = 0 ]
+
+          prof=$(curl -fsS "$api/v1/players/$player")
+          echo "profile: $prof"
+          [ "$(echo "$prof" | jq -r .submissions)" = 1 ]
+          [ "$(echo "$prof" | jq -r .best.touch.score)" = 2100 ]
+
+      # A restart proves the migrations are idempotent on a populated /data, that the
+      # smoke's row survived in /data, and that SIGTERM drains cleanly (docker restart
+      # sends SIGTERM, then SIGKILL after 10 s).
       - name: Smoke — restart is a no-op migration and a clean shutdown
         run: |
           set -euo pipefail
@@ -158,8 +205,9 @@ jobs:
           grep -q '"msg":"shutting down"' second-boot.log
           grep -q '"msg":"stopped"' second-boot.log
           [ "$(grep -c '"msg":"migrations"' second-boot.log)" = 2 ]
-          grep -q '"msg":"migrations","applied":0,"from":2,"to":2' second-boot.log
+          grep -q '"msg":"migrations","applied":0,"from":4,"to":4' second-boot.log
           [ "$(curl -fsS localhost:8080/healthz)" = ok ]
+          [ "$(curl -fsS 'localhost:8080/v1/board?source=touch' | jq -r '.entries[0].score')" = 2100 ]
 
       - name: Container logs and cleanup
         if: always()
