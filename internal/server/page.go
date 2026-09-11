@@ -14,7 +14,7 @@ import (
 const boardScript = `(function () {
   'use strict';
   var FRAME_MS = 1000 / 60;
-  var state = { source: 'touch', window: 'all', sort: 'fastest' };
+  var state = { source: 'all', window: 'all', sort: 'fastest' };
   var status = document.getElementById('status');
   var board_ = document.getElementById('board');
   var ranked = document.getElementById('ranked');
@@ -86,6 +86,11 @@ const boardScript = `(function () {
     who.appendChild(el('b', null, e.display_name));
     who.appendChild(el('small', null,
       [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
+    // On the mixed board the input is the only thing saying which device set the time,
+    // so it is promoted out of the disclosure into the row itself.
+    if (state.source === 'all' && e.source) {
+      who.appendChild(el('span', 'srcpill', e.source.toUpperCase()));
+    }
     head.appendChild(who);
 
     var big = el('div', 'big');
@@ -105,6 +110,21 @@ const boardScript = `(function () {
     // board it tracks the winning run's time and would read as a lower rank beside a
     // higher score. Shown only where it agrees with what ranks the list.
     if (!byScore) def(dl, 'tier', e.tier, tierClass(e.tier));
+    if (Array.isArray(e.attempts_ms) && e.attempts_ms.length) {
+      dl.appendChild(el('dt', null, 'run'));
+      var runs = el('div', 'runs');
+      var fastest = Math.min.apply(null, e.attempts_ms);
+      e.attempts_ms.forEach(function (ms) {
+        runs.appendChild(el('span', 'run' + (ms === fastest ? ' best' : ''),
+                            frames(ms) + ' · ' + Math.round(ms) + ' ms'));
+      });
+      // A misfire consumed an attempt and produced no time, so the run is short. Showing
+      // the gap is the difference between "they landed two" and "they only took two".
+      for (var i = 0; i < (e.misfires || 0); i++) {
+        runs.appendChild(el('span', 'run miss', 'missed'));
+      }
+      dl.appendChild(runs);
+    }
     def(dl, 'input', e.device_label);
     def(dl, 'platform', e.platform);
     def(dl, 'set', when(e.created_at));
@@ -118,7 +138,9 @@ const boardScript = `(function () {
     if (!board.entries.length) {
       board_.hidden = true;
       ranked.textContent = '';
-      status.textContent = 'No ' + state.source + ' scores yet.';
+      status.textContent = state.source === 'all'
+        ? 'No scores yet.'
+        : 'No ' + state.source + ' scores yet.';
       return;
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
@@ -215,6 +237,9 @@ const indexHead = `<!doctype html>
   .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { flex:1 1 auto; min-width:0; }
   .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
+  .srcpill { display:inline-block; margin-top:.3rem; font-family:var(--mono); font-size:.6rem;
+             letter-spacing:.12em; color:var(--accent3); border:1px solid var(--accent3);
+             border-radius:.25rem; padding:.05rem .3rem; }
   .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .big { text-align:right; font-family:var(--mono); flex:0 0 auto; }
@@ -248,21 +273,31 @@ const indexHead = `<!doctype html>
   .detail dd.t-bronze    { color:var(--bronze); }
   .detail dd.t-rookie, .detail dd.t-unranked { color:var(--t-rookie); }
 
-  /* The controls are a tool, not the subject. Collapsed by default and below the board. */
-  .filters { border-top:1px solid var(--line); padding:.15rem 1.25rem .9rem; }
-  .filters > summary { cursor:pointer; color:var(--mute); font-size:.75rem; letter-spacing:.14em;
-                       text-transform:uppercase; padding:.7rem 0; }
-  .filters > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
-  .tabs { display:flex; gap:.4rem; flex-wrap:wrap; }
-  .tabs + .tabs { padding-top:.4rem; }
-  .tabs button { font:inherit; font-size:.72rem; font-weight:700; letter-spacing:.1em; color:var(--dim);
-                 background:var(--well); border:1px solid var(--line); border-radius:.35rem;
-                 padding:.3rem .6rem; cursor:pointer; }
+  /* Controls sit ABOVE the list and stay reachable while it scrolls. Collapsed below the
+     board was wrong: Aaron, "that would make it completely hidden if we got 10 scores."
+     Above-and-adjacent is where a filter belongs — it has to be visible at the moment the
+     list it governs is, and its effect has to be seen without hunting for the control. It
+     earns its place by being small, not by being far away. */
+  .controls { position:sticky; top:0; z-index:2; background:var(--panel);
+              padding:.25rem 1.25rem .7rem; border-bottom:1px solid var(--line); }
+  .tabs { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; }
+  .tabs + .tabs { padding-top:.35rem; }
+  .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
+                 background:var(--well); border:1px solid var(--line); border-radius:.3rem;
+                 padding:.26rem .55rem; cursor:pointer; }
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
-  .window button[aria-pressed="true"] { color:var(--ink); background:var(--panel2); border-color:var(--accent2); }
-  .sort button[aria-pressed="true"] { color:var(--bg); background:var(--accent3); border-color:var(--accent3); }
+  .minor button { font-size:.65rem; padding:.2rem .45rem; }
+  .minor button[aria-pressed="true"] { color:var(--ink); background:var(--panel2); border-color:var(--accent2); }
+  .sep { width:1px; height:.9rem; background:var(--line); margin:0 .25rem; }
+
+  /* Every attempt of the run behind a row — the thing the score is recomputed from. */
+  .runs { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.1rem; }
+  .run { font-family:var(--mono); font-size:.74rem; color:var(--dim); background:var(--panel2);
+         border:1px solid var(--line); border-radius:.25rem; padding:.12rem .4rem; }
+  .run.best { color:var(--accent); border-color:var(--accent); }
+  .run.miss { color:var(--bad); border-color:var(--bad); }
   footer { margin-top:2rem; color:var(--mute); font-size:.85rem; }
   footer p { margin:.25rem 0; }
 </style>
@@ -282,24 +317,23 @@ const indexHead = `<!doctype html>
       <h2 id="board-heading">Reaction leaderboard</h2>
       <p id="ranked" class="ranked"></p>
     </div>
-    <ol id="board" class="board" hidden></ol>
-    <p id="status" role="status" aria-live="polite"></p>
-    <details class="filters">
-      <summary>Filters</summary>
-      <nav class="tabs" aria-label="Input source">
-        <button type="button" data-source="touch" aria-pressed="true">TOUCH</button>
+    <div class="controls">
+      <nav class="tabs" aria-label="Input">
+        <button type="button" data-source="all" aria-pressed="true">ALL</button>
+        <button type="button" data-source="touch" aria-pressed="false">TOUCH</button>
         <button type="button" data-source="pad" aria-pressed="false">PAD</button>
         <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>
       </nav>
-      <nav class="tabs sort" aria-label="Ranking">
+      <nav class="tabs minor" aria-label="Ranking and window">
         <button type="button" data-sort="fastest" aria-pressed="true">FASTEST</button>
         <button type="button" data-sort="score" aria-pressed="false">HIGH SCORE</button>
-      </nav>
-      <nav class="tabs window" aria-label="Time window">
+        <span class="sep" aria-hidden="true"></span>
         <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>
         <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
       </nav>
-    </details>
+    </div>
+    <ol id="board" class="board" hidden></ol>
+    <p id="status" role="status" aria-live="polite"></p>
   </section>
   <footer>
     <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose

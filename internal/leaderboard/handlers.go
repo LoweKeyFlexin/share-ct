@@ -203,7 +203,9 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = Sources[0]
 	}
-	if !ValidSource(source) {
+	// The READ side accepts the mixed board; the SUBMIT side still does not - a score
+	// may never arrive without naming its input.
+	if !ValidBoardSource(source) {
 		httpx.WriteBadRequest(w, "source")
 		return
 	}

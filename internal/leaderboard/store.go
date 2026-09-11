@@ -15,6 +15,15 @@ import (
 // would rank hardware, not people.
 var Sources = []string{"touch", "pad", "keyboard"}
 
+// SourceAll is a BOARD, not a source. A submission always names one of Sources; "all"
+// asks for the three mixed into one ranking, which is the board Aaron wants as the
+// default: "I need it to show touch, pad and keyboard all in one." ValidSource stays
+// the submit-side gate and does NOT accept it — a score may never arrive sourceless.
+const SourceAll = "all"
+
+// ValidBoardSource is the READ side: the three sources plus the mixed board.
+func ValidBoardSource(s string) bool { return s == SourceAll || ValidSource(s) }
+
 // ValidSource reports whether s is one of touch, pad, keyboard.
 func ValidSource(s string) bool {
 	for _, v := range Sources {
@@ -174,18 +183,39 @@ type Entry struct {
 	Platform    string  `json:"platform"`
 	DeviceLabel string  `json:"device_label"`
 	CreatedAt   string  `json:"created_at"` // RFC 3339, UTC
+
+	// Source is which input produced THIS row. On a single-source board it repeats the
+	// board's own source; on the mixed board it is the only thing that says which input
+	// the time was set on, so it is always sent rather than only when it varies.
+	Source string `json:"source"`
+
+	// AttemptsMs is the run behind the row — every reaction in the trial, in the order
+	// they happened. Already stored (attempts_ms TEXT NOT NULL) because the server
+	// recomputes the score from it; it was simply never returned. Aaron: "it still
+	// doesn't tell me every attempt on their scores."
+	AttemptsMs []float64 `json:"attempts_ms"`
+	Misfires   int       `json:"misfires"`
 }
 
 // bestPerPlayer numbers each player's submissions on one source from best to worst in
 // sort's order; row 1 is the one the board shows. The same order ranks the board itself,
 // so the row shown is the row the ranking is about: under fastest a player's slower,
 // higher-scoring trial is not their entry, and neither is its pad.
-func bestPerPlayer(sort string) string {
+func bestPerPlayer(sort, source string) string {
+	where := "s.source = ? AND s.created_at >= ?"
+	if source == SourceAll {
+		// The mixed board ranks a player's best across all three inputs, so the partition
+		// stays per-player and only the filter widens. A player appears once, with whichever
+		// input produced the row the metric selects — which is why the row carries its own
+		// source: on this board the input is data, not a heading.
+		where = "s.created_at >= ?"
+	}
 	return `
-	SELECT s.id, s.player_id, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.device_label, s.created_at,
+	SELECT s.id, s.player_id, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.device_label,
+	       s.created_at, s.source, s.attempts_ms, s.misfires,
 	       ROW_NUMBER() OVER (PARTITION BY s.player_id ORDER BY ` + orderBy(sort, "s.") + `) AS rn
 	FROM submissions s
-	WHERE s.source = ? AND s.created_at >= ?`
+	WHERE ` + where
 }
 
 // Board is the top limit players on source within window, one row per player, in
@@ -194,13 +224,21 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 	if !ValidSort(sort) {
 		return nil, fmt.Errorf("board: unknown sort %q", sort)
 	}
-	q := `WITH best AS (` + bestPerPlayer(sort) + `)
-	  SELECT b.player_id, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform, b.device_label, b.created_at
+	if !ValidBoardSource(source) {
+		return nil, fmt.Errorf("board: unknown source %q", source)
+	}
+	q := `WITH best AS (` + bestPerPlayer(sort, source) + `)
+	  SELECT b.player_id, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform,
+	         b.device_label, b.created_at, b.source, b.attempts_ms, b.misfires
 	  FROM best b JOIN players p ON p.id = b.player_id
 	  WHERE b.rn = 1
 	  ORDER BY ` + orderBy(sort, "b.") + `
 	  LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, source, s.since(window), limit)
+	args := []any{source, s.since(window), limit}
+	if source == SourceAll {
+		args = []any{s.since(window), limit} // the mixed board has no source placeholder
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("board: %w", err)
 	}
@@ -211,7 +249,9 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		var playerID string
 		var label sql.NullString // "" was stored as NULL
 		var created int64
-		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform, &label, &created); err != nil {
+		var attempts string
+		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform,
+			&label, &created, &e.Source, &attempts, &e.Misfires); err != nil {
 			return nil, err
 		}
 		e.Rank = len(entries) + 1
@@ -219,6 +259,17 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		e.Tier = TierName(e.BestMs)
 		e.DeviceLabel = label.String
 		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
+		// attempts_ms is stored as the JSON array the client sent and the score was
+		// recomputed from. A row whose attempts cannot be parsed still ranks - the score
+		// is the server's own - so this degrades to an empty list rather than dropping
+		// the player off the board.
+		e.AttemptsMs = []float64{}
+		if attempts != "" {
+			var parsed []float64
+			if err := json.Unmarshal([]byte(attempts), &parsed); err == nil {
+				e.AttemptsMs = parsed
+			}
+		}
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
@@ -236,7 +287,7 @@ func (s *Store) since(window string) int64 {
 // order, and the board's size; rank is 0 when the player has no submission there. It is
 // what POST /v1/scores answers, so it has to agree with a bare GET /v1/board.
 func (s *Store) Rank(ctx context.Context, source, playerID string) (rank, size int, err error) {
-	q := `WITH best AS (` + bestPerPlayer(SortFastest) + `),
+	q := `WITH best AS (` + bestPerPlayer(SortFastest, "") + `),
 	  top AS (SELECT player_id, ROW_NUMBER() OVER (ORDER BY ` + orderBy(SortFastest, "") + `) AS pos
 	          FROM best WHERE rn = 1)
 	  SELECT (SELECT count(*) FROM top), COALESCE((SELECT pos FROM top WHERE player_id = ?), 0)`

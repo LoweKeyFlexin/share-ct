@@ -288,25 +288,30 @@ func TestIndexPageOffersBothRankings(t *testing.T) {
 	}
 }
 
-// TestBoardIsCardsAndFiltersAreSecondary pins the shape Aaron asked for.
+// TestBoardIsCardsAndControlsAreAboveIt pins the shape, and one reversal.
 //
-// "have scores present more like the app where you can click down into them to view more
-// and doesn't make the leaderboard selection take up so much of the app. Like front and
-// center you see the top players globally. Make the selection and filtering tools not the
-// most prominent thing on the page."
+// The board is a list of <details> cards - the app's own score-log shape, which Aaron
+// called readable - so a reader can open a row for the run behind it.
 //
-// Three chip rows above the data put the controls first and the players third. The board is
-// now a list of <details> cards — the app's own score-log shape, which he called readable —
-// and the filters are a collapsed <details> BELOW it. Asserted structurally because a rule
-// about prominence cannot be checked any other way, and because the obvious regression is
-// someone re-opening the filters by default or moving them back above the board.
-func TestBoardIsCardsAndFiltersAreSecondary(t *testing.T) {
+// The controls sit ABOVE it, compact and sticky. An earlier revision collapsed them BELOW
+// the board on his "make the selection and filtering tools not the most prominent thing on
+// the page", and a test here pinned that. He overruled it on seeing it: "I like your idea
+// of hiding the filter below the scores, but that would make it completely hidden if we got
+// 10 scores." Both instructions are satisfied by small-and-adjacent, not by far-away: a
+// filter has to be visible at the moment the list it governs is, and its effect has to be
+// seen without hunting for the control.
+//
+// Recorded because the previous rule was also written down, and without the reason the next
+// reader has two contradictory tests in the history and no way to tell which won.
+func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 	_, body := do(t, mustApp(t), "GET", "/")
 
 	for _, want := range []string{
 		`<ol id="board" class="board"`, // a list, not a table
-		`<details class="filters">`,    // controls collapse
+		`<div class="controls">`,       // one compact toolbar
 		"el('details', 'row'",          // each entry is a card, built at runtime
+		`data-source="all"`,            // the mixed board exists
+		".controls { position:sticky",  // and stays reachable down a long list
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
@@ -315,18 +320,24 @@ func TestBoardIsCardsAndFiltersAreSecondary(t *testing.T) {
 	if strings.Contains(body, "<table") || strings.Contains(body, "<thead") {
 		t.Error("the board is a list of cards; a table came back")
 	}
-	// The filters must not carry `open`: collapsed is the whole point.
-	if strings.Contains(body, `<details class="filters" open`) {
-		t.Error("filters must start collapsed")
+	if strings.Contains(body, `<details class="filters"`) {
+		t.Error("controls must not be collapsed below the board; a long list hides them")
 	}
-	// And they must come AFTER the board in source order, which is also DOM order here.
-	if strings.Index(body, `<details class="filters">`) < strings.Index(body, `<ol id="board"`) {
-		t.Error("filters must sit below the board, not above it")
+	if strings.Index(body, `<div class="controls">`) > strings.Index(body, `<ol id="board"`) {
+		t.Error("controls must sit above the board")
 	}
-	// Top three wear medals.
+	// ALL is the default: the single-source boards are each empty until someone plays on
+	// that input, and an empty default is what made the page look broken.
+	if !strings.Contains(body, "source: 'all'") {
+		t.Error("the mixed board must be the default")
+	}
 	for _, m := range []string{"row.m1", "row.m2", "row.m3"} {
 		if !strings.Contains(body, "."+m) {
 			t.Errorf("missing medal style for %s", m)
 		}
+	}
+	// Every attempt of the run is rendered, not just the best one.
+	if !strings.Contains(body, "e.attempts_ms") {
+		t.Error("a row must show the run behind it")
 	}
 }
