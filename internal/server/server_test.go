@@ -68,7 +68,7 @@ func TestIndexPage(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("content-type %q, want text/html", ct)
 	}
-	for _, want := range []string{"Fighter CT · Reaction Leaderboard", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
+	for _, want := range []string{"Share CT · Reaction Leaderboard", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -196,7 +196,9 @@ func TestIndexPageNamesTheProductAndNotTheHost(t *testing.T) {
 	_, body := do(t, mustApp(t), "GET", "/")
 
 	for _, want := range []string{
-		"Fighter CT", // the product's public name
+		"Share CT",   // the service's name, in the title and the masthead
+		"Fighter CT", // the app it serves, named in the description line
+		"Ver .01",    // the page's own revision, top right
 		"opt-in",     // the promise that predates the leaderboard
 		"13 frames",  // what the score actually rewards, not an adjective
 	} {

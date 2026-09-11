@@ -162,6 +162,13 @@ var scriptHash = func() string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }()
 
+// pageVersion is the page's own revision, shown at the top right and bumped by hand on
+// every visible change (Aaron 2026-09-11: "at a Ver number to the far right (start with
+// Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
+// reader would notice, not deploys — several pushes can carry one visible change, and a
+// redeploy of identical content is not a new revision.
+const pageVersion = ".01"
+
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
 const indexHead = `<!doctype html>
@@ -169,7 +176,7 @@ const indexHead = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fighter CT · Reaction Leaderboard</title>
+<title>Share CT · Reaction Leaderboard</title>
 <style>
   :root {
     color-scheme: dark;
@@ -183,6 +190,9 @@ const indexHead = `<!doctype html>
   html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { max-width:52rem; margin:0 auto; padding:clamp(2rem, 8vh, 5rem) 1.25rem 4rem; }
   header h1 { font-size:clamp(2.4rem, 7vw, 3.6rem); line-height:1; margin:0; letter-spacing:.02em; }
+  .masthead { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; }
+  .ver { font-family:var(--mono); font-size:.78rem; letter-spacing:.1em; color:var(--mute);
+         white-space:nowrap; }
   .beta { display:inline-block; margin:.75rem 0 0; border:1px solid var(--warn); color:var(--warn); border-radius:.35rem; padding:.15rem .65rem; font-size:.74rem; font-weight:700; letter-spacing:.16em; }
   header p { color:var(--dim); margin:1rem 0 0; max-width:34rem; }
   .panel { margin-top:2.25rem; background:var(--panel); border:1px solid var(--line); border-radius:.9rem; overflow:hidden; }
@@ -260,7 +270,10 @@ const indexHead = `<!doctype html>
 <body>
 <main>
   <header>
-    <h1>Fighter CT</h1>
+    <div class="masthead">
+      <h1>Share CT</h1>
+      <span class="ver">Ver ` + pageVersion + `</span>
+    </div>
     <span class="beta">BETA · MAY GO DOWN</span>
     <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
   </header>
