@@ -1,6 +1,9 @@
 package players
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateDisplayName(t *testing.T) {
 	cases := []struct{ raw, want, reason string }{
@@ -11,8 +14,12 @@ func TestValidateDisplayName(t *testing.T) {
 		{"ab", "", "name_too_short"},
 		{"", "", "name_too_short"},
 		{"   ", "", "name_too_short"},
-		{"123456789012345", "123456789012345", ""},
-		{"1234567890123456", "", "name_too_long"},
+		// Both edges derived from MaxNameLen rather than typed out. These were the literals
+		// "123456789012345" and "1234567890123456"; when the limit moved 15 -> 20 the first
+		// still passed for the wrong reason and the second became a VALID name, so the test
+		// failed on correct code and called a legal name too long.
+		{strings.Repeat("a", MaxNameLen), strings.Repeat("a", MaxNameLen), ""},
+		{strings.Repeat("a", MaxNameLen+1), "", "name_too_long"},
 		{"José Ñandú", "José Ñandú", ""},
 		{"Aaron!", "", "name_invalid_characters"},
 		{"Aaron_1", "", "name_invalid_characters"},

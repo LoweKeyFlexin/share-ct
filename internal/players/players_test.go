@@ -128,8 +128,14 @@ func TestCreateRejects(t *testing.T) {
 		code   int
 		reason string
 	}{
-		"short":       {`{"display_name":"ab","platform":"ios"}`, 422, "name_too_short"},
-		"long":        {`{"display_name":"1234567890123456","platform":"ios"}`, 422, "name_too_long"},
+		"short": {`{"display_name":"ab","platform":"ios"}`, 422, "name_too_short"},
+		// NOT here, deliberately: an empty or blank display_name is ANONYMOUS, not an
+		// error. Its 201 is asserted in TestRegisteringWithNoNameIsAnonymous below.
+		// Derived from MaxNameLen, never a literal: this fixture was "1234567890123456",
+		// a 16-character name, and silently became a VALID name the moment the limit
+		// moved to 20 - the test then failed on correct code and said "too_long" about a
+		// name that is not.
+		"long":        {`{"display_name":"` + strings.Repeat("a", MaxNameLen+1) + `","platform":"ios"}`, 422, "name_too_long"},
 		"chars":       {`{"display_name":"a!b","platform":"ios"}`, 422, "name_invalid_characters"},
 		"reserved":    {`{"display_name":"ADMIN","platform":"ios"}`, 422, "name_reserved"},
 		"platform":    {`{"display_name":"Aaron","platform":"linux"}`, 422, "platform"},
@@ -256,5 +262,85 @@ func TestGetProfile(t *testing.T) {
 	}
 	if rec, _ := hs.do("GET", "/v1/players/00000000-0000-4000-8000-000000000000", "", "", ""); rec.Code != 404 {
 		t.Errorf("unknown id: got %d", rec.Code)
+	}
+}
+
+// TestRegisteringWithNoNameIsAnonymous pins controller-tester-fgc#6112 and Aaron's
+// ruling of 2026-09-11: "empty names just register with NO NAME. Players already have a
+// unique player ID", and "entering nothing on the keyboard for Entry should just default
+// the player back to NO NAME".
+//
+// The shape being pinned is the one that was CHOSEN over two simpler ones. The anonymous
+// player is stored with an EMPTY name and rendered AnonymousName at every read boundary.
+// Storing the literal "NO NAME" instead would have required unreserving it - registration
+// is one endpoint with one field and no privileged path, so the server cannot tell the
+// app's default from a player who typed the same words - and any player could then hide
+// among the unnamed on a shared board. Absence has no spelling, so there is nothing to
+// collide with.
+//
+// Before this, the app sent an empty name, got 422 name_too_short, discarded the reason,
+// and left the player opted in with no account and no message.
+func TestRegisteringWithNoNameIsAnonymous(t *testing.T) {
+	hs := newHarness(t, stubScores{})
+
+	for _, body := range []string{
+		`{"platform":"ios"}`,                               // omitted entirely
+		`{"display_name":"","platform":"ios"}`,             // empty
+		`{"display_name":"  ","platform":"ios"}`,           // whitespace only
+		"{\"display_name\":\"\\t \",\"platform\":\"ios\"}", // tab, which CharacterSet.whitespaces includes
+	} {
+		rec, out := hs.do("POST", "/v1/players", body, "", "")
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: got %d %s, want 201", body, rec.Code, rec.Body.String())
+		}
+		id, _ := out["player_id"].(string)
+		if id == "" {
+			t.Fatalf("%s: no player_id", body)
+		}
+		// The identity that actually tells two nameless players apart.
+		prec, pout := hs.do("GET", "/v1/players/"+id, "", "", "")
+		if prec.Code != http.StatusOK {
+			t.Fatalf("profile: got %d", prec.Code)
+		}
+		if got := pout["display_name"]; got != AnonymousName {
+			t.Errorf("%s: profile display_name = %v, want %q", body, got, AnonymousName)
+		}
+		if short, _ := pout["player_short"].(string); short == "" {
+			t.Errorf("%s: an anonymous player still needs a player_short to be told apart", body)
+		}
+	}
+
+	// The word itself stays unclaimable: that is what makes rendering it safe.
+	for _, claim := range []string{"NO NAME", "no name", "NoName", "  NO   NAME  "} {
+		body := `{"display_name":"` + claim + `","platform":"ios"}`
+		rec, out := hs.do("POST", "/v1/players", body, "", "")
+		if rec.Code != 422 || out["reason"] != "name_reserved" {
+			t.Errorf("claiming %q: got %d %s, want 422 name_reserved", claim, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestClearingTheNameReturnsToAnonymous is the second half of the ruling: the rename
+// endpoint treats a blank field as "go back to anonymous", not as a 422.
+func TestClearingTheNameReturnsToAnonymous(t *testing.T) {
+	hs := newHarness(t, stubScores{})
+	id, token := hs.register("Aaron", "")
+
+	rec, out := hs.do("PATCH", "/v1/players/"+id, `{"display_name":"  "}`, token, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear: got %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if got := out["display_name"]; got != AnonymousName {
+		t.Errorf("rename response display_name = %v, want %q", got, AnonymousName)
+	}
+	_, pout := hs.do("GET", "/v1/players/"+id, "", "", "")
+	if got := pout["display_name"]; got != AnonymousName {
+		t.Errorf("profile after clearing = %v, want %q", got, AnonymousName)
+	}
+	// And back again, so the sentinel is not a one-way door.
+	hs.do("PATCH", "/v1/players/"+id, `{"display_name":"Aaron"}`, token, id)
+	_, pout2 := hs.do("GET", "/v1/players/"+id, "", "", "")
+	if got := pout2["display_name"]; got != "Aaron" {
+		t.Errorf("profile after renaming back = %v, want Aaron", got)
 	}
 }

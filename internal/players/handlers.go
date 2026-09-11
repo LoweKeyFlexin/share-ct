@@ -104,7 +104,11 @@ func (m *Module) create(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	name, reason := ValidateDisplayName(req.DisplayName)
+	// Optional, not required: a player who has not named themselves registers anyway and
+	// is stored with an empty name, rendered AnonymousName wherever it is shown. Making
+	// this required is what broke the app - it sent an empty name, got 422, discarded the
+	// reason, and the player was left opted in with no account (controller-tester-fgc#6112).
+	name, reason := ValidateOptionalDisplayName(req.DisplayName)
 	if reason != "" {
 		httpx.WriteInvalid(w, reason)
 		return
@@ -140,7 +144,10 @@ func (m *Module) rename(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	name, reason := ValidateDisplayName(req.DisplayName)
+	// Clearing the field is a way back to anonymous, not an error. Aaron, 2026-09-11:
+	// "entering nothing on the keyboard for Entry should just default the player back to
+	// NO NAME."
+	name, reason := ValidateOptionalDisplayName(req.DisplayName)
 	if reason != "" {
 		httpx.WriteInvalid(w, reason)
 		return
@@ -150,7 +157,7 @@ func (m *Module) rename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, playerResponse{
-		PlayerID: p.ID, PlayerShort: p.Short(), DisplayName: name, Platform: p.Platform,
+		PlayerID: p.ID, PlayerShort: p.Short(), DisplayName: Display(name), Platform: p.Platform,
 	})
 }
 
@@ -209,7 +216,7 @@ func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, Profile{
-		PlayerID: p.ID, PlayerShort: p.Short(), DisplayName: p.DisplayName, Platform: p.Platform,
+		PlayerID: p.ID, PlayerShort: p.Short(), DisplayName: Display(p.DisplayName), Platform: p.Platform,
 		Best: best, Submissions: n, CreatedAt: p.CreatedAt,
 	})
 }

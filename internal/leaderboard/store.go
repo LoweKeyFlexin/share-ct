@@ -250,6 +250,10 @@ func (s *Store) Recent(ctx context.Context, limit int) ([]Entry, error) {
 		}
 		e.Rank = len(entries) + 1
 		e.PlayerShort = players.Short(playerID)
+		// The empty stored name is the anonymous sentinel: a player who never named
+		// themselves. It must never reach a reader as an empty string, and Display is
+		// the single place that word is chosen.
+		e.DisplayName = players.Display(e.DisplayName)
 		e.Tier = TierName(e.BestMs)
 		e.DeviceLabel = label.String
 		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
@@ -303,6 +307,10 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		}
 		e.Rank = len(entries) + 1
 		e.PlayerShort = players.Short(playerID)
+		// The empty stored name is the anonymous sentinel: a player who never named
+		// themselves. It must never reach a reader as an empty string, and Display is
+		// the single place that word is chosen.
+		e.DisplayName = players.Display(e.DisplayName)
 		e.Tier = TierName(e.BestMs)
 		e.DeviceLabel = label.String
 		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
