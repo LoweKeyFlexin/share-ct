@@ -14,7 +14,7 @@ import (
 const boardScript = `(function () {
   'use strict';
   var FRAME_MS = 1000 / 60;
-  var state = { source: 'touch', window: 'all' };
+  var state = { source: 'touch', window: 'all', sort: 'fastest' };
   var status = document.getElementById('status');
   var table = document.getElementById('board');
   var tbody = table.querySelector('tbody');
@@ -64,8 +64,10 @@ const boardScript = `(function () {
       tail.textContent = '· ' + e.player_short;
       name.appendChild(tail);
       sub(name, [when(e.created_at), e.device_label].filter(Boolean).join(' · '));
-      cell(tr, String(e.score), 'score');
+      var sc = cell(tr, String(e.score), 'score');
+      if (state.sort === 'score') { sc.classList.add('ranks'); } 
       var best = cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best');
+      if (state.sort === 'fastest') { best.classList.add('ranks'); }
       if (typeof e.avg_ms === 'number') {
         var detail = 'avg ' + Math.round(e.avg_ms) + ' ms';
         if (typeof e.accuracy === 'number') { detail += ' · ' + Math.round(e.accuracy * 100) + '%'; }
@@ -82,7 +84,7 @@ const boardScript = `(function () {
   function load() {
     status.textContent = 'Loading…';
     table.hidden = true;
-    fetch('/v1/board?source=' + state.source + '&window=' + state.window + '&limit=50', { headers: { Accept: 'application/json' } })
+    fetch('/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50', { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(render)
       .catch(function () {
@@ -91,9 +93,10 @@ const boardScript = `(function () {
       });
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('[data-source], [data-window]'), function (button) {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-source], [data-window], [data-sort]'), function (button) {
     button.addEventListener('click', function () {
-      var key = button.hasAttribute('data-source') ? 'source' : 'window';
+      var key = button.hasAttribute('data-source') ? 'source'
+              : button.hasAttribute('data-window') ? 'window' : 'sort';
       state[key] = button.getAttribute('data-' + key);
       Array.prototype.forEach.call(document.querySelectorAll('[data-' + key + ']'), function (other) {
         other.setAttribute('aria-pressed', String(other === button));
@@ -147,6 +150,7 @@ const indexHead = `<!doctype html>
   .tabs button:active { transform:translateY(1px); }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
   .window button[aria-pressed="true"] { color:var(--ink); background:var(--panel2); border-color:var(--accent2); }
+  .sort button[aria-pressed="true"] { color:var(--bg); background:var(--accent3); border-color:var(--accent3); }
   #status { padding:1.25rem; margin:0; color:var(--dim); min-height:1.5rem; }
   #status:empty { display:none; }
   table { width:100%; border-collapse:collapse; margin-top:1rem; font-variant-numeric:tabular-nums; }
@@ -159,6 +163,8 @@ const indexHead = `<!doctype html>
   .sub { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-weight:400;
          font-size:.76rem; letter-spacing:.02em; white-space:normal; }
   td.score { color:var(--accent); font-family:var(--mono); font-size:1.1rem; }
+  td.score.ranks, td.best.ranks { font-weight:700; text-decoration:underline; text-underline-offset:.25rem;
+                                  text-decoration-color:var(--accent3); }
   td.best { color:var(--dim); font-family:var(--mono); }
   td.tier { color:var(--accent2); font-size:.78rem; font-weight:700; letter-spacing:.1em; }
   td.platform { color:var(--mute); font-size:.78rem; text-transform:uppercase; letter-spacing:.1em; }
@@ -190,6 +196,10 @@ const indexHead = `<!doctype html>
       <button type="button" data-source="touch" aria-pressed="true">TOUCH</button>
       <button type="button" data-source="pad" aria-pressed="false">PAD</button>
       <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>
+    </nav>
+    <nav class="tabs sort" aria-label="Ranking">
+      <button type="button" data-sort="fastest" aria-pressed="true">FASTEST</button>
+      <button type="button" data-sort="score" aria-pressed="false">HIGH SCORE</button>
     </nav>
     <nav class="tabs window" aria-label="Time window">
       <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>

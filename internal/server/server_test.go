@@ -254,3 +254,34 @@ func mustApp(t *testing.T) http.Handler {
 	h, _ := newApp(t)
 	return h
 }
+
+// TestIndexPageOffersBothRankings pins the sort control.
+//
+// Aaron asked three times why the page showed only fastest times. The server has
+// selected a different submission per player per metric since M1 — bestPerPlayer()
+// passes sort into the ROW_NUMBER partition, so a score board shows each player's
+// best-SCORING run, not their fastest run's score. Verified against the running
+// binary with one player and two submissions: sort=fastest returned best_ms 188.62
+// score 1095, sort=score returned best_ms 193 score 2128.
+//
+// The orchestrator asserted twice that this needed server work first and that a
+// client-only chip would mislabel a row. That was wrong, from reading orderBy()
+// without reading bestPerPlayer(). This test exists so the capability is visible in
+// the page rather than rediscovered from the query.
+func TestIndexPageOffersBothRankings(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+	for _, want := range []string{
+		`data-sort="fastest"`,
+		`data-sort="score"`,
+		"HIGH SCORE",
+		"&sort=' + state.sort", // the chip must reach the request
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	// Default must stay FASTEST: a bare board and the app agree on it.
+	if !strings.Contains(body, `sort: 'fastest'`) {
+		t.Error("the board must default to fastest")
+	}
+}
