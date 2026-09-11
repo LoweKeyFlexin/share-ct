@@ -16,8 +16,7 @@ const boardScript = `(function () {
   var FRAME_MS = 1000 / 60;
   var state = { source: 'touch', window: 'all', sort: 'fastest' };
   var status = document.getElementById('status');
-  var table = document.getElementById('board');
-  var tbody = table.querySelector('tbody');
+  var board_ = document.getElementById('board');
   var ranked = document.getElementById('ranked');
 
   // Say which number ranks the board, and what the other one is.
@@ -35,25 +34,14 @@ const boardScript = `(function () {
     score: 'Ranked by highest score. The time and tier shown are from that run, not the player\'s fastest — tier is a speed rank.'
   };
 
-  function cell(row, text, cls, label) {
-    var td = document.createElement('td');
-    td.textContent = text;
-    if (cls) td.className = cls;
-    if (label) td.setAttribute('data-label', label);
-    row.appendChild(td);
-    return td;
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;   // text only: a display name is player-supplied
+    return n;
   }
 
-  // A second line inside a cell: the device and the submitted time under a player,
-  // the average and accuracy under the best. textContent throughout — a display name
-  // is player-supplied and never reaches the page as markup.
-  function sub(td, text) {
-    if (!text) return;
-    var span = document.createElement('span');
-    span.className = 'sub';
-    span.textContent = text;
-    td.appendChild(span);
-  }
+  function frames(ms) { return (ms / FRAME_MS).toFixed(1) + 'f'; }
 
   // created_at is RFC 3339 UTC. Render it in the reader's own zone; if the value is
   // missing or unparseable, show nothing rather than "Invalid Date".
@@ -65,49 +53,89 @@ const boardScript = `(function () {
            ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
+  function def(dl, term, value, cls) {
+    if (value == null || value === '') return;
+    dl.appendChild(el('dt', null, term));
+    dl.appendChild(el('dd', cls, value));
+  }
+
+  // A tier is a rank name, so it wears its own colour — Aaron: "If it is a gold tier rank,
+  // the color of the world gold should be gold." Derived from the name rather than mapped
+  // by index, so a tier the server adds later degrades to the neutral class instead of
+  // silently taking the colour of whatever sat at its position.
+  function tierClass(name) {
+    if (!name) return 'tier';
+    var key = String(name).toLowerCase().replace(/[^a-z]/g, '');
+    var known = { legend:1, ultimatemaster:'ultimate', highmaster:'highmaster', master:1,
+                  diamond:1, platinum:1, gold:1, silver:1, bronze:1, rookie:1, unranked:1 };
+    var hit = known[key];
+    if (!hit) return 'tier';
+    return 'tier t-' + (hit === 1 ? key : hit);
+  }
+
+  // One card. The headline is whichever number ranks the board, so the row leads with the
+  // thing the list is sorted by; everything else is behind the disclosure.
+  function card(e) {
+    var byScore = state.sort === 'score';
+    var row = el('details', 'row' + (e.rank <= 3 ? ' m' + e.rank : ''));
+    var head = el('summary');
+
+    head.appendChild(el('span', 'rk', String(e.rank)));
+
+    var who = el('div', 'who');
+    who.appendChild(el('b', null, e.display_name));
+    who.appendChild(el('small', null,
+      [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
+    head.appendChild(who);
+
+    var big = el('div', 'big');
+    big.appendChild(el('b', null, byScore ? String(e.score) : frames(e.best_ms)));
+    big.appendChild(el('small', null, byScore ? frames(e.best_ms) : 'avg ' + frames(e.avg_ms)));
+    head.appendChild(big);
+
+    head.appendChild(el('span', 'chev', '›'));
+    row.appendChild(head);
+
+    var dl = el('dl', 'detail');
+    def(dl, 'best', frames(e.best_ms) + ' · ' + Math.round(e.best_ms) + ' ms');
+    def(dl, 'avg', frames(e.avg_ms) + ' · ' + Math.round(e.avg_ms) + ' ms');
+    if (typeof e.accuracy === 'number') def(dl, 'landed', Math.round(e.accuracy * 100) + '%');
+    def(dl, 'score', String(e.score));
+    // The tier is a SPEED rank (TierName is a pure function of best_ms), so on a score
+    // board it tracks the winning run's time and would read as a lower rank beside a
+    // higher score. Shown only where it agrees with what ranks the list.
+    if (!byScore) def(dl, 'tier', e.tier, tierClass(e.tier));
+    def(dl, 'input', e.device_label);
+    def(dl, 'platform', e.platform);
+    def(dl, 'set', when(e.created_at));
+    def(dl, 'player', e.player_short);
+    row.appendChild(dl);
+    return row;
+  }
+
   function render(board) {
-    tbody.textContent = '';
+    board_.textContent = '';
     if (!board.entries.length) {
-      table.hidden = true;
+      board_.hidden = true;
+      ranked.textContent = '';
       status.textContent = 'No ' + state.source + ' scores yet.';
       return;
     }
-    board.entries.forEach(function (e) {
-      var tr = document.createElement('tr');
-      cell(tr, String(e.rank), 'rank');
-      var name = cell(tr, e.display_name + ' ', 'name');
-      var tail = document.createElement('span');
-      tail.className = 'tail';
-      tail.textContent = '· ' + e.player_short;
-      name.appendChild(tail);
-      sub(name, [when(e.created_at), e.device_label].filter(Boolean).join(' · '));
-      var sc = cell(tr, String(e.score), 'score', 'score');
-      if (state.sort === 'score') { sc.classList.add('ranks'); } 
-      var best = cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best', 'best');
-      if (state.sort === 'fastest') { best.classList.add('ranks'); }
-      if (typeof e.avg_ms === 'number') {
-        var detail = 'avg ' + Math.round(e.avg_ms) + ' ms';
-        if (typeof e.accuracy === 'number') { detail += ' · ' + Math.round(e.accuracy * 100) + '%'; }
-        sub(best, detail);
-      }
-      cell(tr, e.tier, 'tier', 'tier');
-      cell(tr, e.platform, 'platform');
-      tbody.appendChild(tr);
-    });
+    board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
     ranked.textContent = RANKED_BY[state.sort] || '';
-    table.hidden = false;
+    board_.hidden = false;
   }
 
   function load() {
     status.textContent = 'Loading…';
     ranked.textContent = '';
-    table.hidden = true;
+    board_.hidden = true;
     fetch('/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50', { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(render)
       .catch(function () {
-        table.hidden = true;
+        board_.hidden = true;
         status.textContent = 'BOARD OFFLINE — beta, may go down.';
       });
   }
@@ -147,6 +175,9 @@ const indexHead = `<!doctype html>
     color-scheme: dark;
     --bg:#1A1325; --panel:#251A38; --panel2:#2E2144; --well:#1E152D; --line:#54346E; --line2:#70468E;
     --ink:#F2E9FF; --dim:#A284C0; --mute:#70568E; --accent:#7CF2A6; --accent2:#B467FF; --accent3:#43D9FF; --warn:#FFB454;
+    --gold:#FFC93C; --silver:#C9D2E0; --bronze:#D08A4E;
+    --t-legend:#FFF1B8; --t-ultimate:#E2A9FF; --t-highmaster:#B467FF; --t-master:#8A7CFF;
+    --t-diamond:#7FE3FF; --t-platinum:#7CF2D6; --t-rookie:#8A93A6;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -154,68 +185,74 @@ const indexHead = `<!doctype html>
   header h1 { font-size:clamp(2.4rem, 7vw, 3.6rem); line-height:1; margin:0; letter-spacing:.02em; }
   .beta { display:inline-block; margin:.75rem 0 0; border:1px solid var(--warn); color:var(--warn); border-radius:.35rem; padding:.15rem .65rem; font-size:.74rem; font-weight:700; letter-spacing:.16em; }
   header p { color:var(--dim); margin:1rem 0 0; max-width:34rem; }
-  .panel { margin-top:2.25rem; background:var(--panel); border:1px solid var(--line); border-radius:.9rem; }
-  /* The table was 800px inside a 702px panel at 1024px wide and the panel clipped it, so
-     PLATFORM was cut off on an iPad with no way to scroll to it. Wide content scrolls in
-     its own box; the page body never does. */
-  .scroller { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:0 0 .9rem .9rem; }
-  .note { font-size:.8rem; }
-  .panel h2 { margin:0; padding:1.1rem 1.25rem .5rem; font-size:.8rem; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); }
-  .tabs { display:flex; gap:.4rem; flex-wrap:wrap; padding:0 1.25rem; }
-  .tabs + .tabs { padding-top:.5rem; }
-  .tabs button { font:inherit; font-size:.8rem; font-weight:700; letter-spacing:.12em; color:var(--dim); background:var(--well); border:1px solid var(--line); border-radius:.5rem; padding:.45rem .9rem; cursor:pointer; transition:color 150ms, border-color 150ms, transform 150ms; }
+  .panel { margin-top:2.25rem; background:var(--panel); border:1px solid var(--line); border-radius:.9rem; overflow:hidden; }
+  .panelhead { padding:1.1rem 1.25rem .6rem; }
+  .panel h2 { margin:0; font-size:.8rem; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); }
+  .ranked { margin:.35rem 0 0; color:var(--mute); font-size:.8rem; }
+  #status { padding:1.25rem; margin:0; color:var(--dim); min-height:1.5rem; }
+  #status:empty { display:none; }
+
+  /* The board is a list of cards, not a table. Aaron, on the app's own score log:
+     "have scores present more like the app where you can click down into them to view
+     more and doesn't make the leaderboard selection take up so much of the app." */
+  .board { list-style:none; margin:0; padding:0 .75rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
+  .row { border:1px solid var(--line); border-radius:.6rem; background:var(--well); overflow:hidden; }
+  .row > summary { display:flex; align-items:center; gap:.75rem; padding:.7rem .85rem; cursor:pointer;
+                   list-style:none; }
+  .row > summary::-webkit-details-marker { display:none; }
+  .row > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:-2px; }
+  .row:hover { border-color:var(--line2); }
+  .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
+  .who { flex:1 1 auto; min-width:0; }
+  .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
+  .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .big { text-align:right; font-family:var(--mono); flex:0 0 auto; }
+  .big b { display:block; font-size:1.3rem; font-weight:400; color:var(--ink); }
+  .big small { display:block; color:var(--mute); font-size:.74rem; }
+  .chev { color:var(--mute); font-size:1rem; transition:transform .15s ease; flex:0 0 auto; }
+  .row[open] .chev { transform:rotate(90deg); }
+
+  /* Top three wear the app's medals. */
+  .row.m1 { border-color:var(--gold); } .row.m1 .rk { color:var(--gold); font-weight:700; }
+  .row.m2 { border-color:var(--silver); } .row.m2 .rk { color:var(--silver); font-weight:700; }
+  .row.m3 { border-color:var(--bronze); } .row.m3 .rk { color:var(--bronze); font-weight:700; }
+
+  .detail { padding:.1rem .85rem .8rem 3.1rem; display:grid; grid-template-columns:auto 1fr; gap:.25rem .8rem;
+            font-size:.82rem; }
+  .detail dt { color:var(--mute); font-family:var(--mono); font-size:.7rem; letter-spacing:.1em;
+               text-transform:uppercase; align-self:center; }
+  .detail dd { margin:0; font-family:var(--mono); color:var(--dim); }
+  .detail dd.tier { font-weight:700; letter-spacing:.06em; }
+  /* Scoped under .detail dd deliberately: a bare .t-gold is specificity (0,1,0) and loses
+     to .detail dd at (0,1,1), so every tier rendered in var(--dim) while its class was
+     correctly applied. Found by reading the COMPUTED colour, not the class list. */
+  .detail dd.t-legend    { color:var(--t-legend); }
+  .detail dd.t-ultimate  { color:var(--t-ultimate); }
+  .detail dd.t-highmaster{ color:var(--t-highmaster); }
+  .detail dd.t-master    { color:var(--t-master); }
+  .detail dd.t-diamond   { color:var(--t-diamond); }
+  .detail dd.t-platinum  { color:var(--t-platinum); }
+  .detail dd.t-gold      { color:var(--gold); }
+  .detail dd.t-silver    { color:var(--silver); }
+  .detail dd.t-bronze    { color:var(--bronze); }
+  .detail dd.t-rookie, .detail dd.t-unranked { color:var(--t-rookie); }
+
+  /* The controls are a tool, not the subject. Collapsed by default and below the board. */
+  .filters { border-top:1px solid var(--line); padding:.15rem 1.25rem .9rem; }
+  .filters > summary { cursor:pointer; color:var(--mute); font-size:.75rem; letter-spacing:.14em;
+                       text-transform:uppercase; padding:.7rem 0; }
+  .filters > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
+  .tabs { display:flex; gap:.4rem; flex-wrap:wrap; }
+  .tabs + .tabs { padding-top:.4rem; }
+  .tabs button { font:inherit; font-size:.72rem; font-weight:700; letter-spacing:.1em; color:var(--dim);
+                 background:var(--well); border:1px solid var(--line); border-radius:.35rem;
+                 padding:.3rem .6rem; cursor:pointer; }
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
-  .tabs button:active { transform:translateY(1px); }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
   .window button[aria-pressed="true"] { color:var(--ink); background:var(--panel2); border-color:var(--accent2); }
   .sort button[aria-pressed="true"] { color:var(--bg); background:var(--accent3); border-color:var(--accent3); }
-  .ranked { padding:.9rem 1.25rem 0; margin:0; color:var(--mute); font-size:.8rem; }
-  #status { padding:1.25rem; margin:0; color:var(--dim); min-height:1.5rem; }
-  #status:empty { display:none; }
-  table { width:100%; border-collapse:collapse; margin-top:1rem; font-variant-numeric:tabular-nums; }
-  th, td { padding:.65rem 1.25rem; text-align:left; border-top:1px solid var(--line); white-space:nowrap; }
-  th { font-size:.7rem; letter-spacing:.14em; text-transform:uppercase; color:var(--mute); border-top:0; }
-  tbody tr:hover td { background:var(--panel2); }
-  td.rank { color:var(--mute); font-family:var(--mono); width:2rem; }
-  td.name { font-weight:600; }
-  .tail { color:var(--mute); font-family:var(--mono); font-weight:400; font-size:.85em; }
-  .sub { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-weight:400;
-         font-size:.76rem; letter-spacing:.02em; white-space:normal; }
-  td.score { color:var(--accent); font-family:var(--mono); font-size:1.1rem; }
-  td.score.ranks, td.best.ranks { font-weight:700; text-decoration:underline; text-underline-offset:.25rem;
-                                  text-decoration-color:var(--accent3); }
-  td.best { color:var(--dim); font-family:var(--mono); }
-  td.tier { color:var(--accent2); font-size:.78rem; font-weight:700; letter-spacing:.1em; }
-  td.platform { color:var(--mute); font-size:.78rem; text-transform:uppercase; letter-spacing:.1em; }
-  /* Narrow: drop PLATFORM and TIER, never BEST. The time is the headline of a reaction
-     board, and the avg/accuracy sub-line lives in that cell — hiding it took half of what
-     the row is for off every phone. */
-  @media (max-width: 52rem) { td.platform, th.platform { display:none; } }
-  /* PHONE: stop being a table. Six columns in 390px produced a row that wrapped at every
-     cell boundary — "14.6f ·" over "243 ms" over "avg 250" over "ms · 67%" — which is what
-     Aaron saw. Each row becomes a block that reads top to bottom, like the app's own score
-     log, and the numbers carry their labels because the header row is gone. */
-  @media (max-width: 34rem) {
-    thead { display:none; }
-    table, tbody, tr, td { display:block; width:auto; }
-    tr { position:relative; padding:.85rem 1rem .85rem 2.6rem; border-top:1px solid var(--line); }
-    tbody tr:hover td { background:none; }
-    td { padding:0; border:0; white-space:normal; }
-    td.rank { position:absolute; left:1rem; top:.85rem; width:auto; }
-    td.name { font-size:1.02rem; }
-    td.tier { display:inline-block; margin-top:.35rem; }
-    td.platform { display:none; }
-    td.score, td.best { display:inline-block; vertical-align:top; margin-top:.35rem; font-size:.95rem; }
-    td.score { margin-right:1.1rem; }
-    td.score::before, td.best::before, td.tier::before {
-      content: attr(data-label) " "; font-size:.68rem; letter-spacing:.12em;
-      text-transform:uppercase; color:var(--mute); margin-right:.3rem;
-    }
-    td.score.ranks, td.best.ranks { text-decoration:none; }
-    td.score.ranks::before, td.best.ranks::before { color:var(--accent3); }
-    .sub { margin-top:.2rem; }
-  }
   footer { margin-top:2rem; color:var(--mute); font-size:.85rem; }
   footer p { margin:.25rem 0; }
 </style>
@@ -228,28 +265,28 @@ const indexHead = `<!doctype html>
     <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
-    <h2 id="board-heading">Reaction leaderboard</h2>
-    <nav class="tabs" aria-label="Input source">
-      <button type="button" data-source="touch" aria-pressed="true">TOUCH</button>
-      <button type="button" data-source="pad" aria-pressed="false">PAD</button>
-      <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>
-    </nav>
-    <nav class="tabs sort" aria-label="Ranking">
-      <button type="button" data-sort="fastest" aria-pressed="true">FASTEST</button>
-      <button type="button" data-sort="score" aria-pressed="false">HIGH SCORE</button>
-    </nav>
-    <nav class="tabs window" aria-label="Time window">
-      <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>
-      <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
-    </nav>
-    <p id="ranked" class="ranked"></p>
-    <p id="status" role="status" aria-live="polite"></p>
-    <div class="scroller">
-    <table id="board" hidden>
-      <thead><tr><th>#</th><th>Player</th><th>Score</th><th class="best">Best</th><th class="tier">Tier</th><th class="platform">Platform</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="panelhead">
+      <h2 id="board-heading">Reaction leaderboard</h2>
+      <p id="ranked" class="ranked"></p>
     </div>
+    <ol id="board" class="board" hidden></ol>
+    <p id="status" role="status" aria-live="polite"></p>
+    <details class="filters">
+      <summary>Filters</summary>
+      <nav class="tabs" aria-label="Input source">
+        <button type="button" data-source="touch" aria-pressed="true">TOUCH</button>
+        <button type="button" data-source="pad" aria-pressed="false">PAD</button>
+        <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>
+      </nav>
+      <nav class="tabs sort" aria-label="Ranking">
+        <button type="button" data-sort="fastest" aria-pressed="true">FASTEST</button>
+        <button type="button" data-sort="score" aria-pressed="false">HIGH SCORE</button>
+      </nav>
+      <nav class="tabs window" aria-label="Time window">
+        <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>
+        <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
+      </nav>
+    </details>
   </section>
   <footer>
     <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose

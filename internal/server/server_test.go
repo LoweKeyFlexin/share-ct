@@ -285,3 +285,46 @@ func TestIndexPageOffersBothRankings(t *testing.T) {
 		t.Error("the board must default to fastest")
 	}
 }
+
+// TestBoardIsCardsAndFiltersAreSecondary pins the shape Aaron asked for.
+//
+// "have scores present more like the app where you can click down into them to view more
+// and doesn't make the leaderboard selection take up so much of the app. Like front and
+// center you see the top players globally. Make the selection and filtering tools not the
+// most prominent thing on the page."
+//
+// Three chip rows above the data put the controls first and the players third. The board is
+// now a list of <details> cards — the app's own score-log shape, which he called readable —
+// and the filters are a collapsed <details> BELOW it. Asserted structurally because a rule
+// about prominence cannot be checked any other way, and because the obvious regression is
+// someone re-opening the filters by default or moving them back above the board.
+func TestBoardIsCardsAndFiltersAreSecondary(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+
+	for _, want := range []string{
+		`<ol id="board" class="board"`, // a list, not a table
+		`<details class="filters">`,    // controls collapse
+		"el('details', 'row'",          // each entry is a card, built at runtime
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "<table") || strings.Contains(body, "<thead") {
+		t.Error("the board is a list of cards; a table came back")
+	}
+	// The filters must not carry `open`: collapsed is the whole point.
+	if strings.Contains(body, `<details class="filters" open`) {
+		t.Error("filters must start collapsed")
+	}
+	// And they must come AFTER the board in source order, which is also DOM order here.
+	if strings.Index(body, `<details class="filters">`) < strings.Index(body, `<ol id="board"`) {
+		t.Error("filters must sit below the board, not above it")
+	}
+	// Top three wear medals.
+	for _, m := range []string{"row.m1", "row.m2", "row.m3"} {
+		if !strings.Contains(body, "."+m) {
+			t.Errorf("missing medal style for %s", m)
+		}
+	}
+}
