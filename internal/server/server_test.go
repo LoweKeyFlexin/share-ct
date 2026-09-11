@@ -68,7 +68,7 @@ func TestIndexPage(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("content-type %q, want text/html", ct)
 	}
-	for _, want := range []string{"Share CT · Reaction Leaderboard", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
+	for _, want := range []string{"Share CT · Reaction Leaderboard", "/v1/board?source=all", "data-view=\"recent\"", "data-window=\"30d\""} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -273,18 +273,25 @@ func mustApp(t *testing.T) http.Handler {
 func TestIndexPageOffersBothRankings(t *testing.T) {
 	_, body := do(t, mustApp(t), "GET", "/")
 	for _, want := range []string{
-		`data-sort="fastest"`,
-		`data-sort="score"`,
+		`data-view="fastest"`,
+		`data-view="score"`,
 		"HIGH SCORE",
-		"&sort=' + state.sort", // the chip must reach the request
+		"&sort=' + state.view", // the chosen view must reach the request
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	// Default must stay FASTEST: a bare board and the app agree on it.
-	if !strings.Contains(body, `sort: 'fastest'`) {
-		t.Error("the board must default to fastest")
+	// The per-input boards still exist on the API and are simply not offered at the top
+	// level yet — Aaron: "Let's remove the Filter by Touch, Pad and Keyboard for now."
+	// The page asks for the mixed board on both rankings.
+	if !strings.Contains(body, "'/v1/board?source=all&window='") {
+		t.Error("both rankings must read the mixed board")
+	}
+	for _, gone := range []string{`data-source="touch"`, `data-source="pad"`, `data-source="keyboard"`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the per-input filter is withdrawn for now; found %q", gone)
+		}
 	}
 }
 
@@ -310,7 +317,7 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 		`<ol id="board" class="board"`, // a list, not a table
 		`<div class="controls">`,       // one compact toolbar
 		"el('details', 'row'",          // each entry is a card, built at runtime
-		`data-source="all"`,            // the mixed board exists
+		`data-view="recent"`,           // the mixed board exists
 		".controls { position:sticky",  // and stays reachable down a long list
 	} {
 		if !strings.Contains(body, want) {
@@ -327,20 +334,20 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 		t.Error("controls must sit above the board")
 	}
 	// RECENT is the default, and the reason has moved twice. Single-source boards are each
-	// empty until someone plays on that input, which is what made the page look broken; ALL
-	// fixed that. But a board of any kind is one row per player, so a session of five trials
-	// still shows as one line — Aaron: "I submitted more than one Touch score today and it's
-	// just showing my single attempt." A feed is the only view where activity is visible.
-	if !strings.Contains(body, "source: 'recent'") {
+	// empty until someone plays on that input, which is what made the page look broken; the
+	// mixed board fixed that. But a board of any kind is one row per player, so a session of
+	// five trials still shows as one line — Aaron: "I submitted more than one Touch score
+	// today and it's just showing my single attempt." A feed is the only view where activity
+	// is visible.
+	if !strings.Contains(body, "view: 'recent'") {
 		t.Error("the feed must be the default view")
 	}
-	if !strings.Contains(body, `data-source="recent"`) || !strings.Contains(body, "/v1/recent") {
-		t.Error("the feed chip must exist and fetch the feed endpoint")
+	if !strings.Contains(body, "/v1/recent") {
+		t.Error("the feed must fetch the feed endpoint")
 	}
-	// RECENT sits left of ALL, which sits left of the single-source boards.
-	if strings.Index(body, `data-source="recent"`) > strings.Index(body, `data-source="all"`) ||
-		strings.Index(body, `data-source="all"`) > strings.Index(body, `data-source="touch"`) {
-		t.Error("chip order must be RECENT, ALL, then the single sources")
+	// RECENT sits left of the two rankings.
+	if strings.Index(body, `data-view="recent"`) > strings.Index(body, `data-view="fastest"`) {
+		t.Error("RECENT must come first")
 	}
 	for _, m := range []string{"row.m1", "row.m2", "row.m3"} {
 		if !strings.Contains(body, "."+m) {

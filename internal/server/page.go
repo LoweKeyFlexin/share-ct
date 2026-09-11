@@ -14,7 +14,11 @@ import (
 const boardScript = `(function () {
   'use strict';
   var FRAME_MS = 1000 / 60;
-  var state = { source: 'recent', window: 'all', sort: 'fastest' };
+  // One view, not a source crossed with a sort. The three the page offers are RECENT (the
+  // feed), FASTEST and HIGH SCORE (both the mixed board, differing only in what ranks it).
+  // Per-input boards still exist on the API — source=touch|pad|keyboard — and can come back
+  // as a filter when there are enough players to make three separate boards worth reading.
+  var state = { view: 'recent', window: 'all' };
   var status = document.getElementById('status');
   var board_ = document.getElementById('board');
   var ranked = document.getElementById('ranked');
@@ -77,8 +81,8 @@ const boardScript = `(function () {
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
-    var byScore = state.sort === 'score' && state.source !== 'recent';
-    var feed = state.source === 'recent';
+    var byScore = state.view === 'score';
+    var feed = state.view === 'recent';
     var row = el('details', 'row' + (!feed && e.rank <= 3 ? ' m' + e.rank : ''));
     var head = el('summary');
 
@@ -90,11 +94,6 @@ const boardScript = `(function () {
     who.appendChild(el('b', null, e.display_name));
     who.appendChild(el('small', null,
       [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
-    // On the mixed board the input is the only thing saying which device set the time,
-    // so it is promoted out of the disclosure into the row itself.
-    if ((state.source === 'all' || feed) && e.source) {
-      who.appendChild(el('span', 'srcpill', e.source.toUpperCase()));
-    }
     head.appendChild(who);
 
     var big = el('div', 'big');
@@ -142,14 +141,14 @@ const boardScript = `(function () {
     if (!board.entries.length) {
       board_.hidden = true;
       ranked.textContent = '';
-      status.textContent = (state.source === 'all' || state.source === 'recent')
+      status.textContent = (state.source === 'all' || state.view === 'recent')
         ? 'No scores yet.'
         : 'No ' + state.source + ' scores yet.';
       return;
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = (state.source === 'recent' ? RANKED_BY.recent : RANKED_BY[state.sort]) || '';
+    ranked.textContent = (state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '';
     board_.hidden = false;
   }
 
@@ -159,10 +158,10 @@ const boardScript = `(function () {
   // to be read and still asks why it is off; an absent one asks nothing. Called on every
   // change AND at load, since the feed is the default view.
   function syncControls() {
-    var feedNow = state.source === 'recent';
+    var feedNow = state.view === 'recent';
     var minor = document.querySelector('.tabs.minor');
     if (minor) { minor.hidden = feedNow; }
-    Array.prototype.forEach.call(document.querySelectorAll('[data-sort], [data-window]'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-window]'), function (b) {
       b.disabled = feedNow;   // belt and braces: hidden controls are also not operable
     });
   }
@@ -171,22 +170,31 @@ const boardScript = `(function () {
     status.textContent = 'Loading…';
     ranked.textContent = '';
     board_.hidden = true;
-    var url = state.source === 'recent'
+    var url = state.view === 'recent'
       ? '/v1/recent?limit=50'
-      : '/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50';
+      : '/v1/board?source=all&window=' + state.window + '&sort=' + state.view + '&limit=50';
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(render)
+      .then(function (board) {
+        try {
+          render(board);
+        } catch (err) {
+          // The server answered; WE broke. Saying "offline" here would send a reader to
+          // check a Pi that is working fine.
+          board_.hidden = true;
+          status.textContent = 'Could not draw the board. The server answered fine.';
+          if (window.console) { console.error('render failed', err); }
+        }
+      })
       .catch(function () {
         board_.hidden = true;
         status.textContent = 'BOARD OFFLINE — beta, may go down.';
       });
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('[data-source], [data-window], [data-sort]'), function (button) {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-view], [data-window]'), function (button) {
     button.addEventListener('click', function () {
-      var key = button.hasAttribute('data-source') ? 'source'
-              : button.hasAttribute('data-window') ? 'window' : 'sort';
+      var key = button.hasAttribute('data-view') ? 'view' : 'window';
       state[key] = button.getAttribute('data-' + key);
       syncControls();
       Array.prototype.forEach.call(document.querySelectorAll('[data-' + key + ']'), function (other) {
@@ -212,7 +220,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".04"
+const pageVersion = ".05"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -260,11 +268,8 @@ const indexHead = `<!doctype html>
   .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { flex:1 1 auto; min-width:0; }
   .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
-  .srcpill { display:inline-block; margin-top:.3rem; font-family:var(--mono); font-size:.6rem;
-             letter-spacing:.12em; color:var(--accent3); border:1px solid var(--accent3);
-             border-radius:.25rem; padding:.05rem .3rem; }
   .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
-               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+               white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
   .big { text-align:right; font-family:var(--mono); flex:0 0 auto; }
   .big b { display:block; font-size:1.3rem; font-weight:400; color:var(--ink); }
   .big small { display:block; color:var(--mute); font-size:.74rem; }
@@ -346,17 +351,12 @@ const indexHead = `<!doctype html>
       <p id="ranked" class="ranked"></p>
     </div>
     <div class="controls">
-      <nav class="tabs" aria-label="Input">
-        <button type="button" data-source="recent" aria-pressed="true">RECENT</button>
-        <button type="button" data-source="all" aria-pressed="false">ALL</button>
-        <button type="button" data-source="touch" aria-pressed="false">TOUCH</button>
-        <button type="button" data-source="pad" aria-pressed="false">PAD</button>
-        <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>
+      <nav class="tabs" aria-label="View">
+        <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
+        <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
+        <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
       </nav>
-      <nav class="tabs minor" aria-label="Ranking and window">
-        <button type="button" data-sort="fastest" aria-pressed="true">FASTEST</button>
-        <button type="button" data-sort="score" aria-pressed="false">HIGH SCORE</button>
-        <span class="sep" aria-hidden="true"></span>
+      <nav class="tabs minor" aria-label="Time window">
         <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>
         <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
       </nav>
