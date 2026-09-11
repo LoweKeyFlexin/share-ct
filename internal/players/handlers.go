@@ -81,7 +81,7 @@ func (m *Module) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/players", m.create)
 	mux.HandleFunc("GET /v1/players/{id}", m.get)
 	mux.Handle("PATCH /v1/players/{id}", m.RequireBearer(requireOwner(http.HandlerFunc(m.rename))))
-	mux.Handle("DELETE /v1/players/{id}", m.RequireBearer(requireOwner(http.HandlerFunc(m.erase))))
+	mux.Handle("DELETE /v1/players/{id}", m.requireExists(m.RequireBearer(requireOwner(http.HandlerFunc(m.erase)))))
 }
 
 type createRequest struct {
@@ -155,7 +155,10 @@ func (m *Module) rename(w http.ResponseWriter, r *http.Request) {
 }
 
 // erase is DELETE /v1/players/{id} (bearer, own id only): the player and every row
-// that references it are gone when this returns 204.
+// that references it are gone when this returns 204. The codes are load-bearing: the
+// app runs the erase as a job it retries until it hears 204 or 404, and only then
+// forgets the player id and token. A row that vanished between requireExists and here
+// is a 404 through fail, never a 500.
 func (m *Module) erase(w http.ResponseWriter, r *http.Request) {
 	p, _ := FromContext(r.Context())
 	if err := m.store.Delete(r.Context(), p.ID); err != nil {
@@ -163,6 +166,23 @@ func (m *Module) erase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// requireExists answers 404 when {id} names no player, before the bearer is checked.
+// An erased player's token died with its row, so the app's retry of a delete whose 204
+// was lost arrives unauthenticated; read as 401 it would be retried forever, with the
+// credentials kept on the phone for a player that no longer exists. 404 says "already
+// erased". A live player's id still needs its own token: 401 or 403 as before, never
+// 404, so a wrong token cannot be mistaken for "nothing to delete". Nothing is revealed
+// here that the public GET /v1/players/{id} does not already say.
+func (m *Module) requireExists(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := m.store.Get(r.Context(), r.PathValue("id")); err != nil {
+			m.fail(w, "look up player", err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Profile is GET /v1/players/{id}: public, the same facts the board shows.

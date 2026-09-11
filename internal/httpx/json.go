@@ -67,12 +67,31 @@ func WriteRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 // trailing data) and returns false. Unknown fields are ignored so an older server still
 // accepts a newer app's body.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	return decodeJSON(w, r, v, false)
+}
+
+// DecodeJSONStrict is DecodeJSON for a body whose field set is a contract: a key v does
+// not declare answers 422 {"error":"invalid","reason":"unknown_field"} and returns
+// false. The app promises its users exactly what leaves the phone, so a key the server
+// has not agreed to is a client bug to surface, not an extra to drop.
+func DecodeJSONStrict(w http.ResponseWriter, r *http.Request, v any) bool {
+	return decodeJSON(w, r, v, true)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any, strict bool) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 	dec := json.NewDecoder(r.Body)
+	if strict {
+		dec.DisallowUnknownFields()
+	}
 	if err := dec.Decode(v); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large")
+			return false
+		}
+		if strict && isUnknownField(err) {
+			WriteInvalid(w, "unknown_field")
 			return false
 		}
 		WriteBadRequest(w, "json")
@@ -83,6 +102,12 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// isUnknownField recognises the decoder's unknown-field error, which encoding/json
+// reports as a plain `json: unknown field "<name>"` with no type of its own.
+func isUnknownField(err error) bool {
+	return strings.HasPrefix(err.Error(), "json: unknown field ")
 }
 
 // ClientIP is the address rate limits key on: Cloudflare's CF-Connecting-IP when the

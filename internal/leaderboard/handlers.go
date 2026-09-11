@@ -60,9 +60,12 @@ func (m *Module) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/board", m.board)
 }
 
-// SubmitRequest is the POST /v1/scores body (design brief §D). best_ms, avg_ms,
-// accuracy and score are what the app computed; the server recomputes all four from
-// attempts_ms and misfires and ranks only its own numbers.
+// SubmitRequest is the POST /v1/scores body (design brief §D): exactly these twelve
+// keys, the set the app's disclosure sheet promises its users and its contract test
+// asserts. The body is decoded strictly, so an undeclared key is 422 unknown_field
+// rather than a silent drop; a field added here is a change to that promise. best_ms,
+// avg_ms, accuracy and score are what the app computed; the server recomputes all four
+// from attempts_ms and misfires and ranks only its own numbers.
 type SubmitRequest struct {
 	ClientID    string    `json:"client_id"`
 	Source      string    `json:"source"`
@@ -79,7 +82,8 @@ type SubmitRequest struct {
 }
 
 // SubmitResponse is the POST /v1/scores reply: 201 on a new row, 200 on a repeat.
-// rank and board_size are on the source's all-time board.
+// rank and board_size are on the source's all-time board in its default (fastest)
+// order, so they agree with what a bare GET /v1/board shows.
 type SubmitResponse struct {
 	SubmissionID int64 `json:"submission_id"`
 	Rank         int   `json:"rank"`
@@ -147,7 +151,7 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req SubmitRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	if !httpx.DecodeJSONStrict(w, r, &req) {
 		return
 	}
 	ts, reason := Validate(&req)
@@ -189,7 +193,10 @@ type Board struct {
 	Entries []Entry `json:"entries"`
 }
 
-// board is GET /v1/board?source=touch|pad|keyboard&window=all|30d&limit=50.
+// board is GET /v1/board?source=touch|pad|keyboard&window=all|30d&sort=fastest|score&limit=50.
+// Every parameter has a default and every unknown value is a 400 naming it; sort in
+// particular never falls back, because a typo that quietly returned a different order
+// would be indistinguishable from the board being wrong.
 func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	source := q.Get("source")
@@ -208,6 +215,14 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteBadRequest(w, "window")
 		return
 	}
+	sort := q.Get("sort")
+	if sort == "" {
+		sort = SortFastest
+	}
+	if !ValidSort(sort) {
+		httpx.WriteBadRequest(w, "sort")
+		return
+	}
 	limit := DefaultLimit
 	if s := q.Get("limit"); s != "" {
 		n, err := strconv.Atoi(s)
@@ -217,9 +232,9 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = min(n, MaxLimit)
 	}
-	entries, err := m.store.Board(r.Context(), source, window, limit)
+	entries, err := m.store.Board(r.Context(), source, window, sort, limit)
 	if err != nil {
-		m.log.Error("board", "source", source, "window", window, "error", err.Error())
+		m.log.Error("board", "source", source, "window", window, "sort", sort, "error", err.Error())
 		httpx.WriteError(w, http.StatusInternalServerError, "internal")
 		return
 	}

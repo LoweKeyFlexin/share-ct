@@ -220,8 +220,21 @@ func TestDeletePlayer(t *testing.T) {
 	if rec, _ := hs.do("GET", "/v1/players/"+id, "", "", ""); rec.Code != 404 {
 		t.Errorf("after delete GET: got %d, want 404", rec.Code)
 	}
-	if rec, _ := hs.do("DELETE", "/v1/players/"+id, "", token, ""); rec.Code != 401 {
-		t.Errorf("the token must die with the player: got %d, want 401", rec.Code)
+	// The token died with the row, so the app's retry of a delete whose 204 was lost
+	// arrives unauthenticated. It reads as already erased, 404, never 401: the app keeps
+	// the credentials and retries until it hears 204 or 404.
+	if rec, out := hs.do("DELETE", "/v1/players/"+id, "", token, ""); rec.Code != 404 || out["error"] != "not_found" {
+		t.Errorf("repeat delete after the erase: got %d %s, want 404 not_found", rec.Code, rec.Body.String())
+	}
+	// Everything else the dead token tries is still refused.
+	if rec, _ := hs.do("PATCH", "/v1/players/"+id, `{"display_name":"Ghost"}`, token, ""); rec.Code != 401 {
+		t.Errorf("the token must die with the player: PATCH got %d, want 401", rec.Code)
+	}
+	// An id that never existed is 404 too, with or without a token, and never 500.
+	for name, tok := range map[string]string{"no token": "", "another player's token": otherToken} {
+		if rec, _ := hs.do("DELETE", "/v1/players/00000000-0000-4000-8000-000000000000", "", tok, ""); rec.Code != 404 {
+			t.Errorf("delete of an unknown id, %s: got %d, want 404", name, rec.Code)
+		}
 	}
 }
 

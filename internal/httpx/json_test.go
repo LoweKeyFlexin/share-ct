@@ -38,6 +38,39 @@ func TestDecodeJSON(t *testing.T) {
 	}
 }
 
+func decodeStrict(t *testing.T, raw string) (*httptest.ResponseRecorder, body, bool) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/", strings.NewReader(raw))
+	var v body
+	ok := DecodeJSONStrict(rec, r, &v)
+	return rec, v, ok
+}
+
+func TestDecodeJSONStrict(t *testing.T) {
+	if rec, v, ok := decodeStrict(t, `{"name":"a"}`); !ok || v.Name != "a" || rec.Code != 200 {
+		t.Errorf("declared body: ok=%v v=%+v code=%d", ok, v, rec.Code)
+	}
+	want := `{"error":"invalid","reason":"unknown_field"}` + "\n"
+	for name, raw := range map[string]string{
+		"extra key": `{"name":"a","latitude":51.5}`, "extra key first": `{"latitude":51.5,"name":"a"}`, "only an extra key": `{"latitude":51.5}`,
+	} {
+		if rec, _, ok := decodeStrict(t, raw); ok || rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+			t.Errorf("%s: ok=%v code=%d body=%q, want 422 %q", name, ok, rec.Code, rec.Body.String(), want)
+		}
+	}
+	// Malformed and oversize bodies keep their own answers; the field check comes after.
+	for name, raw := range map[string]string{"garbage": "nope", "trailing": `{"name":"a"} {"name":"b"}`, "array": `[1]`} {
+		if rec, _, ok := decodeStrict(t, raw); ok || rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: ok=%v code=%d, want 400", name, ok, rec.Code)
+		}
+	}
+	huge := `{"name":"a","pad":"` + strings.Repeat("x", MaxBodyBytes) + `"}`
+	if rec, _, ok := decodeStrict(t, huge); ok || rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversize with an extra key: ok=%v code=%d, want 413", ok, rec.Code)
+	}
+}
+
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.7:5555"
