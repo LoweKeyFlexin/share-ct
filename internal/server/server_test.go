@@ -68,7 +68,7 @@ func TestIndexPage(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("content-type %q, want text/html", ct)
 	}
-	for _, want := range []string{"Share CT · Reaction Leaderboard", "/v1/board?source=all", "data-view=\"recent\"", "data-window=\"30d\""} {
+	for _, want := range []string{"Share CT · Reaction Leaderboard", "/v1/board?source=all", "data-view=\"recent\""} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -285,8 +285,8 @@ func TestIndexPageOffersBothRankings(t *testing.T) {
 	// The per-input boards still exist on the API and are simply not offered at the top
 	// level yet — Aaron: "Let's remove the Filter by Touch, Pad and Keyboard for now."
 	// The page asks for the mixed board on both rankings.
-	if !strings.Contains(body, "'/v1/board?source=all&window='") {
-		t.Error("both rankings must read the mixed board")
+	if !strings.Contains(body, "'/v1/board?source=all&window=all&sort='") {
+		t.Error("both rankings must read the mixed board, all-time")
 	}
 	for _, gone := range []string{`data-source="touch"`, `data-source="pad"`, `data-source="keyboard"`} {
 		if strings.Contains(body, gone) {
@@ -316,7 +316,8 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 	for _, want := range []string{
 		`<ol id="board" class="board"`, // a list, not a table
 		`<div class="controls">`,       // one compact toolbar
-		"el('details', 'row'",          // each entry is a card, built at runtime
+		"el('details', cls)",           // each entry is a card, built at runtime
+		"var cls = 'row';",             // whose classes carry the rank colours
 		`data-view="recent"`,           // the mixed board exists
 		".controls { position:sticky",  // and stays reachable down a long list
 	} {
@@ -354,21 +355,129 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 			t.Errorf("missing medal style for %s", m)
 		}
 	}
-	// Sort and window do not apply to a feed, so they are hidden there rather than greyed
-	// out. A visible-but-disabled control still asks to be read and still asks why it is
-	// off - Aaron: "with recent selected, the 'Fastest and All time' filters being exposed
-	// below are confusing". The CSS rule matters as much as the attribute: an author
-	// display rule beats the UA stylesheet, so .tabs{display:flex} silently defeated
-	// [hidden] until .tabs[hidden] was added.
+	// The time-window control is withdrawn - Aaron: "let's remove the 30 days metric from
+	// the leaderboard for now". The API still takes the parameter and the page still sends
+	// window=all, so the control can come back without a server change; what must not come
+	// back by accident is the control itself.
+	for _, gone := range []string{`data-window=`, "30 DAYS", "ALL TIME", "tabs minor"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the time-window control is withdrawn for now; found %q", gone)
+		}
+	}
+	// The rule that makes [hidden] work on a flex container stays: an author display rule
+	// beats the UA stylesheet, so .tabs{display:flex} silently defeated [hidden] until
+	// .tabs[hidden] was added, and the next hideable tab row would rediscover it.
 	if !strings.Contains(body, ".tabs[hidden] { display:none; }") {
 		t.Error("hidden must actually hide: .tabs{display:flex} overrides the UA [hidden] rule")
-	}
-	if !strings.Contains(body, "minor.hidden = feedNow") {
-		t.Error("the sort and window row must hide on the feed")
 	}
 
 	// Every attempt of the run is rendered, not just the best one.
 	if !strings.Contains(body, "e.attempts_ms") {
 		t.Error("a row must show the run behind it")
+	}
+}
+
+// TestTheRankColoursTheNumberThatRanksTheRow pins Aaron's ask - "Scores should be the
+// color of the Rank. Gold score for gold, the diamond color for Diamond" - and the
+// mechanism that keeps it from silently reverting.
+//
+// The mechanism matters as much as the result. Tier colours were applied by a class that
+// set `color`, which meant a bare .t-gold at specificity (0,1,0) lost to .detail dd at
+// (0,1,1) and every tier rendered grey while carrying the right class - a failure only
+// visible by reading the COMPUTED colour. The fix is that the tier class now declares a
+// custom PROPERTY and the colour is declared once, where it is read. Two rules that
+// declare different properties cannot out-specify each other, so pinning "the tier class
+// sets --tier, never color" is pinning the thing that made the bug impossible.
+func TestTheRankColoursTheNumberThatRanksTheRow(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+
+	// One declaration, resolved in priority order: podium metal, then tier, then plain ink.
+	if !strings.Contains(body, "color:var(--headline, var(--tier, var(--ink)))") {
+		t.Error("the headline number must read --headline then --tier then --ink")
+	}
+	// Every rung of the server's ladder has a colour, and each rule declares the variable.
+	for _, tier := range []string{"legend", "ultimate", "highmaster", "master", "diamond",
+		"platinum", "gold", "silver", "bronze", "rookie"} {
+		rule := ".row.t-" + tier
+		i := strings.Index(body, rule)
+		if i < 0 {
+			t.Errorf("no colour rule for tier %q", tier)
+			continue
+		}
+		decl := body[i:]
+		if end := strings.Index(decl, "}"); end >= 0 {
+			decl = decl[:end]
+		}
+		if !strings.Contains(decl, "--tier:") {
+			t.Errorf("%s must declare --tier, not a colour: %q", rule, decl)
+		}
+		if strings.Contains(decl, "color:") && !strings.Contains(decl, "--tier:") {
+			t.Errorf("%s declares colour directly; that is the specificity trap: %q", rule, decl)
+		}
+	}
+	// The tier NAME reads the same variable, so the colour on the number always has a
+	// legend somewhere in the row.
+	if !strings.Contains(body, ".detail dd.tier { font-weight:700; letter-spacing:.06em; color:var(--tier, var(--dim)); }") {
+		t.Error("the tier name must read --tier too, or the coloured number has no legend")
+	}
+	// The tier is shown on every board now, score included - a coloured number whose
+	// colour is never named is decoration.
+	if strings.Contains(body, "if (!byScore) def(dl, 'tier'") {
+		t.Error("the tier name must appear on every board, not only where it ranks")
+	}
+}
+
+// TestFastestIsATopTenAndBothPodiumsAreStruckMetal pins the two podium asks.
+//
+// Aaron: "The Fastest should display the top 10 if it doesn't already and top 3 should get
+// special legend colors for their score. think of something cool (no emojis) to do for the
+// High score top 3."
+func TestFastestIsATopTenAndBothPodiumsAreStruckMetal(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+
+	if !strings.Contains(body, "var LIMITS = { recent: 50, fastest: 10, score: 50 };") {
+		t.Error("FASTEST must be a top ten")
+	}
+	if !strings.Contains(body, "&limit=' + LIMITS[state.view]") {
+		t.Error("the limit must come from the view, or FASTEST silently returns fifty again")
+	}
+
+	// The podium metals override the tier colour on the headline, and are struck as a
+	// gradient clipped to the glyphs: flat fill made silver indistinguishable from ink.
+	for _, want := range []string{
+		"--headline:var(--gold)", "--headline:var(--silver)", "--headline:var(--bronze)",
+		"-webkit-background-clip:text; background-clip:text;",
+		"background-size:150% 100%; background-position:50% 0;",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("podium lacks %q", want)
+		}
+	}
+	// Only HIGH SCORE's podium moves - that is what tells the two podiums apart.
+	if !strings.Contains(body, ".row.foil .big b { animation:sheen 5s linear infinite; }") {
+		t.Error("the HIGH SCORE podium must carry the sheen")
+	}
+	if !strings.Contains(body, "if (podium && byScore) { cls += ' foil'; }") {
+		t.Error("only the score board's podium gets the sheen")
+	}
+	// A transparent fill with no clip support would erase the number outright.
+	if !strings.Contains(body, "@supports not ((-webkit-background-clip: text) or (background-clip: text))") {
+		t.Error("the foil needs a fallback, or an unsupporting browser renders no score at all")
+	}
+	// Motion is the flourish; the metal is the point.
+	if !strings.Contains(body, "@media (prefers-reduced-motion: reduce)") {
+		t.Error("the sheen must stop for reduced motion")
+	}
+	// No emoji anywhere: Aaron asked for this explicitly, and the podium is exactly where a
+	// medal glyph would have been reached for. U+2100 is above every punctuation mark the
+	// page legitimately uses (the chevron is U+203A, the separator U+00B7) and below the
+	// symbol and emoji blocks, so no exception list is needed - and an exception list that
+	// never excludes anything is a guard that looks stricter than it is. Positive control:
+	// appending U+1F947 to this body fires the branch.
+	for _, r := range body {
+		if r >= 0x2100 {
+			t.Errorf("symbol %q (U+%04X) in the page; the podium must be type, not glyphs", r, r)
+			break
+		}
 	}
 }
