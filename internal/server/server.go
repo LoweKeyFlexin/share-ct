@@ -1,4 +1,5 @@
-// Package server wires the HTTP mux, its middleware and the static page.
+// Package server wires the HTTP mux, its middleware, the static page and every
+// feature's routes.
 package server
 
 import (
@@ -8,6 +9,9 @@ import (
 	"time"
 
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
+	"github.com/LoweKeyFlexin/share-ct/internal/leaderboard"
+	"github.com/LoweKeyFlexin/share-ct/internal/players"
+	"github.com/LoweKeyFlexin/share-ct/internal/store"
 )
 
 // Pinger reports whether the database answers; /healthz turns its error into a 503.
@@ -15,12 +19,22 @@ type Pinger func(ctx context.Context) error
 
 const healthTimeout = 2 * time.Second
 
-// New returns the root handler: the routes wrapped in recovery, headers and request logging.
-func New(log *slog.Logger, ping Pinger, board http.Handler) http.Handler {
+// New returns the root handler: /, /healthz, the players and leaderboard routes and
+// the JSON 404, wrapped in recovery, headers and request logging. now is injectable
+// so tests can drive the clock behind created_at, the 30d window and the rate limits.
+func New(log *slog.Logger, db *store.Store, now func() time.Time) http.Handler {
+	if now == nil {
+		now = time.Now
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
-	mux.HandleFunc("GET /healthz", handleHealthz(log, ping))
-	mux.Handle("GET /v1/board", board)
+	mux.HandleFunc("GET /healthz", handleHealthz(log, db.Ping))
+
+	scores := leaderboard.NewStore(db.DB(), now)
+	pl := players.New(log, db.DB(), now, scores)
+	pl.Register(mux)
+	leaderboard.New(log, scores, pl.RequireBearer, now).Register(mux)
+
 	mux.HandleFunc("/", handleNotFound)
 	return recoverer(log, secureHeaders(requestLogger(log, mux)))
 }

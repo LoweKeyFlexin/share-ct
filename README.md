@@ -23,9 +23,9 @@ tracking. Players can rename or erase their data from the app.
 
 ## Status
 
-Pipeline-proof skeleton: `/healthz`, the placeholder page, a placeholder `/v1/board`, the
-`linux/arm64` image and the CI smoke job. No scoring API yet. The app repo is private; this one is public so the server's
-behaviour is inspectable and the image builds for free.
+M0 scoring API: players (register, rename, erase), score submission with a server-side
+recompute, the board, and a front page that renders it. The app repo is private; this one
+is public so the server's behaviour is inspectable and the image builds for free.
 
 ## Run
 
@@ -41,7 +41,7 @@ Logs are JSON lines on stdout, one object per line. Every boot prints, in order:
 
 ```
 {"msg":"starting","version":"…","commit":"…","go":"go1.23.x","database_path":"/data/leaderboard.db","listen_addr":"0.0.0.0:8080"}
-{"msg":"migrations","applied":2,"from":0,"to":2}     ← applied is 0 on every later boot
+{"msg":"migrations","applied":4,"from":0,"to":4}     ← applied is 0 on every later boot
 {"msg":"listening","addr":"[::]:8080"}               ← Linux reports the 0.0.0.0 wildcard as the dual-stack [::]
 ```
 
@@ -95,12 +95,98 @@ the same image and smoke it without pushing.
 
 ## API
 
-| Route | Response |
-| --- | --- |
-| `GET /healthz` | `200` `ok` after `SELECT 1` succeeds; `503` otherwise. |
-| `GET /` | The front page: static HTML, inline CSS, no scripts, no external assets. |
-| `GET /v1/board` | **Placeholder.** Always `{"source":"touch","window":"all","entries":[]}` so the app can be pointed at it before the real board lands. |
-| anything else | `404` `{"error":"not_found"}` |
+Every body is JSON, capped at 4 KB. Errors are `{"error":"<code>"}`; a body that parsed
+but broke a rule is `422 {"error":"invalid","reason":"<rule>"}`; a bad query is
+`400 {"error":"bad_request","reason":"<param>"}`; over a limit is `429` with `Retry-After`
+in seconds. Authenticated routes take `Authorization: Bearer <token>`: `401` without a
+valid token, `403` for another player's id.
 
-The real API (`POST /v1/players`, `POST /v1/scores`, the filtered board) is specified in the
-app repo's design brief and lands next.
+| Route | Auth | Response |
+| --- | --- | --- |
+| `GET /healthz` | – | `200` `ok` after `SELECT 1`; `503` otherwise. |
+| `GET /` | – | The board page: one HTML document, inline CSS, one inline script (CSP hash-pinned) that fetches `/v1/board`. |
+| `POST /v1/players` | – | `201 {player_id, token}` |
+| `GET /v1/players/{id}` | – | `200 {player_id, player_short, display_name, platform, best:{touch,pad,keyboard}, submissions, created_at}` |
+| `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
+| `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased |
+| `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id` |
+| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform}]}` |
+| anything else | – | `404 {"error":"not_found"}` |
+
+### Register a player
+
+The device mints nothing itself: it sends a display name and gets an opaque id and a
+bearer token back. Only `sha256(token)` is stored; a lost token means a new player.
+Display names follow the app's username rules: trimmed, 3–15 characters, letters, digits
+and spaces, reserved handles (`ADMIN`, `NO NAME`, `CT`, …) refused. Ten registrations a
+day per IP.
+
+```sh
+curl -sS -X POST https://ct.bond-haus.com/v1/players \
+  -H 'Content-Type: application/json' \
+  -d '{"display_name":"Aaron","platform":"ios"}'
+# {"player_id":"6f1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b","token":"…43 chars…"}
+```
+
+`reason` on 422: `name_too_short`, `name_too_long`, `name_invalid_characters`, `name_reserved`, `platform`
+(`ios`, `mac`, `windows` or `android`).
+
+### Rename, erase, look up
+
+```sh
+curl -sS -X PATCH https://ct.bond-haus.com/v1/players/$PLAYER \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"display_name":"Aaron L"}'
+
+curl -sS -X DELETE https://ct.bond-haus.com/v1/players/$PLAYER \
+  -H "Authorization: Bearer $TOKEN"          # 204: "delete my data"
+
+curl -sS https://ct.bond-haus.com/v1/players/$PLAYER
+# {"player_id":"…","player_short":"3A4B","display_name":"Aaron","platform":"ios",
+#  "best":{"touch":{"score":2100,"best_ms":200,"avg_ms":205,"accuracy":1,"tier":"DIAMOND","platform":"ios","created_at":1800000000},
+#          "pad":null,"keyboard":null},"submissions":1,"created_at":1800000000}
+```
+
+### Submit a score
+
+The app sends the trial as it scored it. The server **recomputes** `best_ms`, `avg_ms`,
+`accuracy` and `score` from `attempts_ms` and `misfires` with the app's own `scoreTrial`
+(ported from `CTCore/Formulas.swift` and proven against the app's parity fixture) and
+ranks only its own numbers; the client's four are kept in `client_*` columns for audit.
+
+```sh
+curl -sS -X POST https://ct.bond-haus.com/v1/scores \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"client_id":"3B2F…","source":"touch",
+       "best_ms":200,"avg_ms":205,"accuracy":1,"score":2100,
+       "attempts_ms":[200,205,210],"misfires":0,
+       "app_build":"2214","platform":"ios","device_model":"iPhone17,2","device_label":"Touch"}'
+# 201 {"submission_id":17,"rank":1,"board_size":12}
+```
+
+Bounds, each a 422 `reason`:
+
+| reason | rule |
+| --- | --- |
+| `attempts` | `len(attempts_ms) + misfires == 3`, at least one hit, `misfires >= 0` |
+| `implausible` | every sample in `[100, 3000]` ms (the app discards anything else before it is a sample); `min(attempts_ms)` inside the app's high-score band, 10–200 frames (`166.7`–`3333.3` ms), under which the app itself writes no PB |
+| `best_ms_mismatch` | `best_ms` is not `min(attempts_ms)` |
+| `score_mismatch` | `score` is not what `scoreTrial` gives for these attempts |
+| `client_id`, `source`, `platform`, `app_build`, `device` | missing, unknown or too long (`source` is `touch`, `pad` or `keyboard`) |
+
+`client_id` is the app's `RTScore.id`: resubmitting it answers `200` with the original
+row, so a retry after a dropped connection never double-posts. Limits: 10 submits a
+minute per player, 60 a minute per IP (`CF-Connecting-IP` behind the tunnel).
+
+### Read the board
+
+```sh
+curl -sS 'https://ct.bond-haus.com/v1/board?source=pad&window=30d&limit=10'
+# {"source":"pad","window":"30d","entries":[
+#   {"rank":1,"player_short":"3A4B","display_name":"Aaron","score":2220,"best_ms":170,"avg_ms":175,
+#    "accuracy":1,"tier":"LEGEND","platform":"ios"}]}
+```
+
+`source` defaults to `touch`, `window` (`all` or `30d`) to `all`, `limit` to 50 (max 100).
+One row per player, their best submission; ties go to the lower `best_ms`, then the earlier
+submission. The three sources never share a ranking. `entries` is always an array.

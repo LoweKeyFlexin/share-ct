@@ -1,0 +1,201 @@
+{
+  "version": 2,
+  "description": "Reaction formula parity. band: isValidHighScore(bestMs) against the 10-200 frame plausibility band (frame = 1000/60 ms). Boundary cases probe 1-2ms INSIDE/OUTSIDE the band, never the exact float boundary \u2014 10*frameMs accumulates differently per language/compiler. tiers: skill-tier name from bestMs \u2014 the SF6 ranked ladder (#1078, v2; replaced the GODLIKE 5-tier ladder). trials: full trial scoring \u2014 samples (ms) + misfires -> expected components. iOS ContentView completeTrial math is the source of truth; band/tier cases seeded from ControllerTesterWindows/src/reaction.rs tests (2026-07-01).",
+  "constants": {
+    "trialAttempts": 3,
+    "frameMs": 16.666666666666668,
+    "pbFloorFrames": 10,
+    "pbCeilFrames": 200,
+    "maxPlausibleReactionMs": 3000
+  },
+  "band": [
+    {
+      "name": "6.5 frames too fast",
+      "bestMs": 108,
+      "valid": false
+    },
+    {
+      "name": "250ms valid",
+      "bestMs": 250,
+      "valid": true
+    },
+    {
+      "name": "just inside floor valid",
+      "bestMs": 168,
+      "valid": true
+    },
+    {
+      "name": "just under floor invalid",
+      "bestMs": 165,
+      "valid": false
+    },
+    {
+      "name": "just inside ceiling valid",
+      "bestMs": 3332,
+      "valid": true
+    },
+    {
+      "name": "just over ceiling invalid",
+      "bestMs": 3335,
+      "valid": false
+    }
+  ],
+  "tiers": [
+    {
+      "name": "10f legend",
+      "bestMs": 170,
+      "tier": "LEGEND"
+    },
+    {
+      "name": "10.8f ultimate master",
+      "bestMs": 180,
+      "tier": "ULTIMATE MASTER"
+    },
+    {
+      "name": "11.3f high master",
+      "bestMs": 188,
+      "tier": "HIGH MASTER"
+    },
+    {
+      "name": "11.8f master",
+      "bestMs": 197,
+      "tier": "MASTER"
+    },
+    {
+      "name": "12.3f diamond",
+      "bestMs": 205,
+      "tier": "DIAMOND"
+    },
+    {
+      "name": "13.5f platinum",
+      "bestMs": 225,
+      "tier": "PLATINUM"
+    },
+    {
+      "name": "15f gold",
+      "bestMs": 250,
+      "tier": "GOLD"
+    },
+    {
+      "name": "16f silver",
+      "bestMs": 267,
+      "tier": "SILVER"
+    },
+    {
+      "name": "18f bronze",
+      "bestMs": 300,
+      "tier": "BRONZE"
+    },
+    {
+      "name": "20f rookie",
+      "bestMs": 333,
+      "tier": "ROOKIE"
+    },
+    {
+      "name": "invalid unranked",
+      "bestMs": 108,
+      "tier": "UNRANKED"
+    }
+  ],
+  "trials": [
+    {
+      "name": "elite flawless clears SS (#873 Q4-A)",
+      "samples": [
+        170,
+        175,
+        180
+      ],
+      "misfires": 0,
+      "expect": {
+        "bestMs": 170,
+        "accuracy": 1.0,
+        "base": 720,
+        "accBonus": 150,
+        "consistBonus": 100,
+        "subBonus": 750,
+        "flawless": true,
+        "score": 2220,
+        "grade": "SS"
+      }
+    },
+    {
+      "name": "clean fast trial: 3 hits, tight, all sub-13f",
+      "samples": [
+        200,
+        205,
+        210
+      ],
+      "misfires": 0,
+      "expect": {
+        "bestMs": 200,
+        "accuracy": 1.0,
+        "base": 600,
+        "accBonus": 150,
+        "consistBonus": 100,
+        "subBonus": 750,
+        "flawless": true,
+        "score": 2100,
+        "grade": "S+"
+      }
+    },
+    {
+      "name": "one misfire kills accBonus and scales base",
+      "samples": [
+        200,
+        210
+      ],
+      "misfires": 1,
+      "expect": {
+        "bestMs": 200,
+        "accuracy": 0.6666666666666666,
+        "base": 400,
+        "accBonus": 0,
+        "consistBonus": 100,
+        "subBonus": 500,
+        "flawless": false,
+        "score": 1000,
+        "grade": "S+"
+      }
+    },
+    {
+      "name": "slow but clean: no sub bonus, wide spread",
+      "samples": [
+        300,
+        380,
+        450
+      ],
+      "misfires": 0,
+      "expect": {
+        "bestMs": 300,
+        "accuracy": 1.0,
+        "base": 200,
+        "accBonus": 150,
+        "consistBonus": 0,
+        "subBonus": 0,
+        "flawless": false,
+        "score": 350,
+        "grade": "C"
+      }
+    },
+    {
+      "name": "speed floor: 350ms best scores zero base",
+      "samples": [
+        350,
+        360,
+        370
+      ],
+      "misfires": 0,
+      "expect": {
+        "bestMs": 350,
+        "accuracy": 1.0,
+        "base": 0,
+        "accBonus": 150,
+        "consistBonus": 100,
+        "subBonus": 0,
+        "flawless": false,
+        "score": 250,
+        "grade": "C"
+      }
+    }
+  ]
+}
