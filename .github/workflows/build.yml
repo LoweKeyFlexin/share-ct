@@ -124,7 +124,12 @@ jobs:
           [ "$board" = '{"source":"touch","window":"all","entries":[]}' ]
 
           page=$(curl -fsS localhost:8080/)
-          echo "$page" | grep -q 'Share CT · BETA · MAY GO DOWN'
+          # Assert what the page IS, not one exact string of its copy. This pinned the old
+          # <title> and went red on the first change to it, then stayed red through five more
+          # pushes while the image shipped anyway. A check nobody reads is worse than none.
+          echo "$page" | grep -qF 'Share CT'
+          echo "$page" | grep -qF 'BETA · MAY GO DOWN'
+          echo "$page" | grep -qE 'Ver \.[0-9]+'
           echo "$page" | grep -q '/v1/board?source='
 
           code=$(curl -sS -o /dev/null -w '%{http_code}' localhost:8080/nope)
