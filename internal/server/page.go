@@ -18,6 +18,22 @@ const boardScript = `(function () {
   var status = document.getElementById('status');
   var table = document.getElementById('board');
   var tbody = table.querySelector('tbody');
+  var ranked = document.getElementById('ranked');
+
+  // Say which number ranks the board, and what the other one is.
+  //
+  // The server picks a different submission per player per metric, so on a score board a
+  // row's time is the fastest attempt OF THE RUN THAT SCORED HIGHEST — not that player's
+  // fastest, and not a record. A column headed BEST over that value would imply one. It
+  // also means a player can appear with two different runs across the two boards, which is
+  // correct and reads as an inconsistency unless it is said out loud.
+  // TierName() on the server is a pure function of best_ms (SF6 frame ladder), so on a
+  // score board the tier tracks the winning run's SPEED, not its score: a higher-scoring
+  // run with a slower single reads as a LOWER tier. Correct, and baffling unless said.
+  var RANKED_BY = {
+    fastest: 'Ranked by fastest single attempt.',
+    score: 'Ranked by highest score. The time and tier shown are from that run, not the player\'s fastest — tier is a speed rank.'
+  };
 
   function cell(row, text, cls, label) {
     var td = document.createElement('td');
@@ -79,11 +95,13 @@ const boardScript = `(function () {
       tbody.appendChild(tr);
     });
     status.textContent = '';
+    ranked.textContent = RANKED_BY[state.sort] || '';
     table.hidden = false;
   }
 
   function load() {
     status.textContent = 'Loading…';
+    ranked.textContent = '';
     table.hidden = true;
     fetch('/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50', { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
@@ -152,6 +170,7 @@ const indexHead = `<!doctype html>
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
   .window button[aria-pressed="true"] { color:var(--ink); background:var(--panel2); border-color:var(--accent2); }
   .sort button[aria-pressed="true"] { color:var(--bg); background:var(--accent3); border-color:var(--accent3); }
+  .ranked { padding:.9rem 1.25rem 0; margin:0; color:var(--mute); font-size:.8rem; }
   #status { padding:1.25rem; margin:0; color:var(--dim); min-height:1.5rem; }
   #status:empty { display:none; }
   table { width:100%; border-collapse:collapse; margin-top:1rem; font-variant-numeric:tabular-nums; }
@@ -223,6 +242,7 @@ const indexHead = `<!doctype html>
       <button type="button" data-window="all" aria-pressed="true">ALL TIME</button>
       <button type="button" data-window="30d" aria-pressed="false">30 DAYS</button>
     </nav>
+    <p id="ranked" class="ranked"></p>
     <p id="status" role="status" aria-live="polite"></p>
     <div class="scroller">
     <table id="board" hidden>
