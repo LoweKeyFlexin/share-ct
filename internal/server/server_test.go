@@ -326,10 +326,21 @@ func TestBoardIsCardsAndControlsAreAboveIt(t *testing.T) {
 	if strings.Index(body, `<div class="controls">`) > strings.Index(body, `<ol id="board"`) {
 		t.Error("controls must sit above the board")
 	}
-	// ALL is the default: the single-source boards are each empty until someone plays on
-	// that input, and an empty default is what made the page look broken.
-	if !strings.Contains(body, "source: 'all'") {
-		t.Error("the mixed board must be the default")
+	// RECENT is the default, and the reason has moved twice. Single-source boards are each
+	// empty until someone plays on that input, which is what made the page look broken; ALL
+	// fixed that. But a board of any kind is one row per player, so a session of five trials
+	// still shows as one line — Aaron: "I submitted more than one Touch score today and it's
+	// just showing my single attempt." A feed is the only view where activity is visible.
+	if !strings.Contains(body, "source: 'recent'") {
+		t.Error("the feed must be the default view")
+	}
+	if !strings.Contains(body, `data-source="recent"`) || !strings.Contains(body, "/v1/recent") {
+		t.Error("the feed chip must exist and fetch the feed endpoint")
+	}
+	// RECENT sits left of ALL, which sits left of the single-source boards.
+	if strings.Index(body, `data-source="recent"`) > strings.Index(body, `data-source="all"`) ||
+		strings.Index(body, `data-source="all"`) > strings.Index(body, `data-source="touch"`) {
+		t.Error("chip order must be RECENT, ALL, then the single sources")
 	}
 	for _, m := range []string{"row.m1", "row.m2", "row.m3"} {
 		if !strings.Contains(body, "."+m) {

@@ -14,7 +14,7 @@ import (
 const boardScript = `(function () {
   'use strict';
   var FRAME_MS = 1000 / 60;
-  var state = { source: 'all', window: 'all', sort: 'fastest' };
+  var state = { source: 'recent', window: 'all', sort: 'fastest' };
   var status = document.getElementById('status');
   var board_ = document.getElementById('board');
   var ranked = document.getElementById('ranked');
@@ -30,6 +30,7 @@ const boardScript = `(function () {
   // score board the tier tracks the winning run's SPEED, not its score: a higher-scoring
   // run with a slower single reads as a LOWER tier. Correct, and baffling unless said.
   var RANKED_BY = {
+    recent: 'Every score as it arrives, newest first — all inputs mixed.',
     fastest: 'Ranked by fastest single attempt.',
     score: 'Ranked by highest score. The time and tier shown are from that run, not the player\'s fastest — tier is a speed rank.'
   };
@@ -76,11 +77,14 @@ const boardScript = `(function () {
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
-    var byScore = state.sort === 'score';
-    var row = el('details', 'row' + (e.rank <= 3 ? ' m' + e.rank : ''));
+    var byScore = state.sort === 'score' && state.source !== 'recent';
+    var feed = state.source === 'recent';
+    var row = el('details', 'row' + (!feed && e.rank <= 3 ? ' m' + e.rank : ''));
     var head = el('summary');
 
-    head.appendChild(el('span', 'rk', String(e.rank)));
+    // A feed has no standings, so no rank number and no medals: position here is only
+    // "how recently", and numbering it would read as a placing.
+    head.appendChild(el('span', 'rk', feed ? '·' : String(e.rank)));
 
     var who = el('div', 'who');
     who.appendChild(el('b', null, e.display_name));
@@ -88,7 +92,7 @@ const boardScript = `(function () {
       [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
     // On the mixed board the input is the only thing saying which device set the time,
     // so it is promoted out of the disclosure into the row itself.
-    if (state.source === 'all' && e.source) {
+    if ((state.source === 'all' || feed) && e.source) {
       who.appendChild(el('span', 'srcpill', e.source.toUpperCase()));
     }
     head.appendChild(who);
@@ -138,22 +142,35 @@ const boardScript = `(function () {
     if (!board.entries.length) {
       board_.hidden = true;
       ranked.textContent = '';
-      status.textContent = state.source === 'all'
+      status.textContent = (state.source === 'all' || state.source === 'recent')
         ? 'No scores yet.'
         : 'No ' + state.source + ' scores yet.';
       return;
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = RANKED_BY[state.sort] || '';
+    ranked.textContent = (state.source === 'recent' ? RANKED_BY.recent : RANKED_BY[state.sort]) || '';
     board_.hidden = false;
+  }
+
+  // Sort and window rank a board; a feed is chronological, so they are disabled there
+  // rather than silently ignored. Called on every change AND at load — the feed is the
+  // default view, so a rule that only ran on a click left them live on first paint.
+  function syncControls() {
+    var feedNow = state.source === 'recent';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-sort], [data-window]'), function (b) {
+      b.disabled = feedNow;
+    });
   }
 
   function load() {
     status.textContent = 'Loading…';
     ranked.textContent = '';
     board_.hidden = true;
-    fetch('/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50', { headers: { Accept: 'application/json' } })
+    var url = state.source === 'recent'
+      ? '/v1/recent?limit=50'
+      : '/v1/board?source=' + state.source + '&window=' + state.window + '&sort=' + state.sort + '&limit=50';
+    fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(render)
       .catch(function () {
@@ -167,6 +184,7 @@ const boardScript = `(function () {
       var key = button.hasAttribute('data-source') ? 'source'
               : button.hasAttribute('data-window') ? 'window' : 'sort';
       state[key] = button.getAttribute('data-' + key);
+      syncControls();
       Array.prototype.forEach.call(document.querySelectorAll('[data-' + key + ']'), function (other) {
         other.setAttribute('aria-pressed', String(other === button));
       });
@@ -174,6 +192,7 @@ const boardScript = `(function () {
     });
   });
 
+  syncControls();
   load();
 })();
 `
@@ -189,7 +208,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".02"
+const pageVersion = ".03"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -319,7 +338,8 @@ const indexHead = `<!doctype html>
     </div>
     <div class="controls">
       <nav class="tabs" aria-label="Input">
-        <button type="button" data-source="all" aria-pressed="true">ALL</button>
+        <button type="button" data-source="recent" aria-pressed="true">RECENT</button>
+        <button type="button" data-source="all" aria-pressed="false">ALL</button>
         <button type="button" data-source="touch" aria-pressed="false">TOUCH</button>
         <button type="button" data-source="pad" aria-pressed="false">PAD</button>
         <button type="button" data-source="keyboard" aria-pressed="false">KEYBOARD</button>

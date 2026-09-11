@@ -58,6 +58,7 @@ func New(log *slog.Logger, store *Store, auth func(http.Handler) http.Handler, n
 func (m *Module) Register(mux *http.ServeMux) {
 	mux.Handle("POST /v1/scores", m.auth(http.HandlerFunc(m.submit)))
 	mux.HandleFunc("GET /v1/board", m.board)
+	mux.HandleFunc("GET /v1/recent", m.recent)
 }
 
 // SubmitRequest is the POST /v1/scores body (design brief §D): exactly these twelve
@@ -197,6 +198,29 @@ type Board struct {
 // Every parameter has a default and every unknown value is a 400 naming it; sort in
 // particular never falls back, because a typo that quietly returned a different order
 // would be indistinguishable from the board being wrong.
+// recent is a feed of the newest submissions across every input, newest first. It takes
+// no source, window or sort: it is not a ranking, and offering a sort on a feed would
+// invite reading it as one.
+func (m *Module) recent(w http.ResponseWriter, r *http.Request) {
+	limit := DefaultLimit
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			httpx.WriteBadRequest(w, "limit")
+			return
+		}
+		limit = min(n, MaxLimit)
+	}
+	entries, err := m.store.Recent(r.Context(), limit)
+	if err != nil {
+		m.log.Error("recent", "error", err.Error())
+		httpx.WriteError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	httpx.WriteJSON(w, http.StatusOK, Board{Source: "recent", Window: WindowAll, Entries: entries})
+}
+
 func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	source := q.Get("source")

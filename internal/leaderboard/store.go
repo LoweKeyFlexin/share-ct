@@ -218,6 +218,53 @@ func bestPerPlayer(sort, source string) string {
 	WHERE ` + where
 }
 
+// Recent is the newest submissions across every input, newest first — a feed of activity
+// rather than a ranking. It is deliberately NOT one row per player: the board collapses a
+// player to their best, so a session of five trials shows as one line and the page looks
+// static. Aaron: "I submitted more than one Touch score today and it's just showing my
+// single attempt."
+//
+// Rank here is position in the feed, which is chronological, not a standing.
+func (s *Store) Recent(ctx context.Context, limit int) ([]Entry, error) {
+	const q = `
+	  SELECT s.player_id, p.display_name, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform,
+	         s.device_label, s.created_at, s.source, s.attempts_ms, s.misfires
+	  FROM submissions s JOIN players p ON p.id = s.player_id
+	  ORDER BY s.created_at DESC, s.id DESC
+	  LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent: %w", err)
+	}
+	defer rows.Close()
+	entries := []Entry{}
+	for rows.Next() {
+		var e Entry
+		var playerID string
+		var label sql.NullString
+		var created int64
+		var attempts string
+		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy,
+			&e.Platform, &label, &created, &e.Source, &attempts, &e.Misfires); err != nil {
+			return nil, err
+		}
+		e.Rank = len(entries) + 1
+		e.PlayerShort = players.Short(playerID)
+		e.Tier = TierName(e.BestMs)
+		e.DeviceLabel = label.String
+		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
+		e.AttemptsMs = []float64{}
+		if attempts != "" {
+			var parsed []float64
+			if err := json.Unmarshal([]byte(attempts), &parsed); err == nil {
+				e.AttemptsMs = parsed
+			}
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 // Board is the top limit players on source within window, one row per player, in
 // sort's order. An unknown sort is an error, never a fallback.
 func (s *Store) Board(ctx context.Context, source, window, sort string, limit int) ([]Entry, error) {
