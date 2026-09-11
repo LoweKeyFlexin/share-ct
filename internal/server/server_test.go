@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -66,13 +68,27 @@ func TestIndexPage(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("content-type %q, want text/html", ct)
 	}
-	for _, want := range []string{"Share CT · BETA · MAY GO DOWN", "Reaction leaderboard coming soon"} {
+	for _, want := range []string{"Share CT · BETA · MAY GO DOWN", "/v1/board?source=", "data-source=\"pad\"", "data-window=\"30d\""} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if strings.Contains(body, "<script") || strings.Contains(body, "http") {
-		t.Error("page must have no scripts and no external assets")
+	for _, banned := range []string{"http://", "https://", " src=", "href=", "innerHTML"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("page must be self-contained and build rows from text: found %q", banned)
+		}
+	}
+	// The one inline script is exactly what the CSP hash admits.
+	_, after, ok := strings.Cut(body, "<script>")
+	script, _, ok2 := strings.Cut(after, "</script>")
+	if !ok || !ok2 || strings.Count(body, "<script") != 1 {
+		t.Fatal("page must carry exactly one inline script")
+	}
+	sum := sha256.Sum256([]byte(script))
+	want := "script-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, want) || !strings.Contains(csp, "connect-src 'self'") || !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("CSP %q must admit only the inline script's hash and same-origin fetch", csp)
 	}
 }
 
