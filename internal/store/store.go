@@ -17,10 +17,12 @@ type Store struct {
 	db *sql.DB
 }
 
-// dsn builds the driver DSN: WAL journaling and a 5 s busy timeout, as the brief fixes.
-// The -wal and -shm files sit beside the database, so the directory must be writable.
+// dsn builds the driver DSN: WAL journaling and a 5 s busy timeout, as the brief fixes,
+// plus foreign keys on so a feature table's ON DELETE CASCADE actually fires when a
+// player is erased. The -wal and -shm files sit beside the database, so the directory
+// must be writable.
 func dsn(path string) string {
-	return "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	return "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 }
 
 // Open opens (creating if needed) the database at path. The pool is capped at one
@@ -49,22 +51,32 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.requireWAL(ctx); err != nil {
+	if err := s.requirePragmas(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-// requireWAL fails loudly if the pragma did not take, rather than running on a rollback
-// journal nobody asked for.
-func (s *Store) requireWAL(ctx context.Context) error {
+// DB exposes the single-connection pool to the feature packages that own tables in it.
+func (s *Store) DB() *sql.DB { return s.db }
+
+// requirePragmas fails loudly if a DSN pragma did not take, rather than running on a
+// rollback journal nobody asked for or with cascades silently off.
+func (s *Store) requirePragmas(ctx context.Context) error {
 	var mode string
 	if err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
 		return fmt.Errorf("read journal_mode: %w", err)
 	}
 	if !strings.EqualFold(mode, "wal") {
 		return fmt.Errorf("journal_mode is %q, want wal", mode)
+	}
+	var fk int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fk); err != nil {
+		return fmt.Errorf("read foreign_keys: %w", err)
+	}
+	if fk != 1 {
+		return fmt.Errorf("foreign_keys is %d, want 1", fk)
 	}
 	return nil
 }

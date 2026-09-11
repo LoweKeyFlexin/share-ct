@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,20 @@ func TestOpenRequiresExistingDirectory(t *testing.T) {
 	}
 }
 
+// embedded returns the real migrations, so the counts below follow the directory
+// instead of being retyped every time a feature adds a file.
+func embedded(t *testing.T) []Migration {
+	t.Helper()
+	ms, err := Load(migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 2 {
+		t.Fatalf("only %d embedded migrations; expected at least init + players", len(ms))
+	}
+	return ms
+}
+
 func TestOpenUsesWALAndPings(t *testing.T) {
 	s, dir := openTemp(t)
 	ctx := context.Background()
@@ -38,6 +53,10 @@ func TestOpenUsesWALAndPings(t *testing.T) {
 	}
 	if !strings.EqualFold(mode, "wal") {
 		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+	var fk int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fk); err != nil || fk != 1 {
+		t.Fatalf("foreign_keys = %d (err %v), want 1: cascades depend on it", fk, err)
 	}
 	if err := s.Ping(ctx); err != nil {
 		t.Fatal(err)
@@ -57,20 +76,23 @@ func TestMigrateAppliesOnceThenNoOps(t *testing.T) {
 	s, _ := openTemp(t)
 	ctx := context.Background()
 
+	ms := embedded(t)
+	n, last := len(ms), ms[len(ms)-1].Version
+
 	first, err := s.Migrate(ctx, migrations.FS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Applied != 2 || first.From != 0 || first.To != 2 {
-		t.Fatalf("first run = %+v, want applied 2, 0 -> 2", first)
+	if first.Applied != n || first.From != 0 || first.To != last {
+		t.Fatalf("first run = %+v, want applied %d, 0 -> %d", first, n, last)
 	}
 
 	second, err := s.Migrate(ctx, migrations.FS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Applied != 0 || second.From != 2 || second.To != 2 {
-		t.Fatalf("second run = %+v, want applied 0, 2 -> 2", second)
+	if second.Applied != 0 || second.From != last || second.To != last {
+		t.Fatalf("second run = %+v, want applied 0, %d -> %d", second, last, last)
 	}
 
 	for _, table := range []string{"schema_migrations", "players"} {
@@ -88,17 +110,19 @@ func TestMigrateResumesFromRecordedVersion(t *testing.T) {
 	if _, err := s.Migrate(ctx, migrations.FS); err != nil {
 		t.Fatal(err)
 	}
-	later := fstest.MapFS{
-		"001_init.sql":    {Data: []byte("SELECT 'never run again';")},
-		"002_players.sql": {Data: []byte("SELECT 'never run again';")},
-		"003_more.sql":    {Data: []byte("CREATE TABLE more (id INTEGER PRIMARY KEY);")},
+	ms := embedded(t)
+	last := ms[len(ms)-1].Version
+	later := fstest.MapFS{}
+	for _, m := range ms {
+		later[fmt.Sprintf("%03d_%s.sql", m.Version, m.Name)] = &fstest.MapFile{Data: []byte("SELECT 'never run again';")}
 	}
+	later[fmt.Sprintf("%03d_more.sql", last+1)] = &fstest.MapFile{Data: []byte("CREATE TABLE more (id INTEGER PRIMARY KEY);")}
 	res, err := s.Migrate(ctx, later)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Applied != 1 || res.From != 2 || res.To != 3 {
-		t.Fatalf("got %+v, want applied 1, 2 -> 3", res)
+	if res.Applied != 1 || res.From != last || res.To != last+1 {
+		t.Fatalf("got %+v, want applied 1, %d -> %d", res, last, last+1)
 	}
 }
 
