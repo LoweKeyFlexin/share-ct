@@ -180,3 +180,77 @@ func TestRoundTrip(t *testing.T) {
 		t.Errorf("board after delete: %v", board)
 	}
 }
+
+// TestIndexPageNamesTheProductAndNotTheHost pins the page's visible copy.
+//
+// Nothing pinned it before, which is how it went stale twice at once: it named the
+// app "Controller Tester FGC" ten days after Aaron renamed the product to Fighter CT
+// (branding/fighter-ct-icon-pack/ADOPTION.md, 2026-08-30), and it described the host
+// as "a friend on a Raspberry Pi" a day after he ruled that wording out. Neither was
+// a code defect and neither could fail a build, so both survived until he read the
+// page himself.
+//
+// The banned list is the point. A rename that only fixes the occurrence someone
+// noticed is the failure this test exists to stop.
+func TestIndexPageNamesTheProductAndNotTheHost(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+
+	for _, want := range []string{
+		"Fighter CT", // the product's public name
+		"opt-in",     // the promise that predates the leaderboard
+		"13 frames",  // what the score actually rewards, not an adjective
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page must say %q", want)
+		}
+	}
+
+	// Retired copy only, matched case-insensitively against the exact phrases that were
+	// actually wrong. Deliberately NOT a bare "Controller Tester" or "Will": the iOS App
+	// Store listing is still titled Controller Tester FGC (bundle lowe.controllertester),
+	// so "opt in from Controller Tester FGC on the App Store" is a sentence this page may
+	// legitimately want, and "will" is an ordinary English word. A banned list that can fire
+	// on correct copy gets deleted by the next person rather than argued with, which would
+	// cost more than the drift it was guarding.
+	// Only phrases that can never be correct copy. "controller tester fgc" is NOT here:
+	// the iOS App Store listing is still titled that (bundle lowe.controllertester), so
+	// "opt in from Controller Tester FGC on the App Store" is legitimate and a ban would
+	// fire on it — verified by writing exactly that sentence and watching the ban trip.
+	// The rename is covered by the positive assertion that "Fighter CT" is present, which
+	// catches a page that names only the old title without catching one that names both.
+	lower := strings.ToLower(body)
+	for _, banned := range []string{
+		"raspberry",
+		"hosted by a friend",
+	} {
+		if strings.Contains(lower, banned) {
+			t.Errorf("page must not contain %q", banned)
+		}
+	}
+}
+
+// TestIndexPageShowsWhatTheBoardAlreadyReturns pins the fields a row renders.
+//
+// Every one of these was already in the /v1/board payload and the page discarded it,
+// so a global row was a name and a time while the app's own row showed the device,
+// the moment and the accuracy. Aaron's words: "it doesn't feel very real the way it
+// is." Asserting the script reads each field stops a future edit quietly dropping one
+// again — the payload carrying a field is not the same as the page showing it.
+func TestIndexPageShowsWhatTheBoardAlreadyReturns(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+	for _, field := range []string{"device_label", "created_at", "avg_ms", "accuracy"} {
+		if !strings.Contains(body, "e."+field) {
+			t.Errorf("a board row must render %s; it is in the payload already", field)
+		}
+	}
+	// Player-supplied text reaches the page as text, never as markup.
+	if strings.Contains(body, "innerHTML") {
+		t.Error("rows must be built with textContent")
+	}
+}
+
+func mustApp(t *testing.T) http.Handler {
+	t.Helper()
+	h, _ := newApp(t)
+	return h
+}

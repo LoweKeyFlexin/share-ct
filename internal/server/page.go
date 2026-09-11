@@ -27,6 +27,27 @@ const boardScript = `(function () {
     return td;
   }
 
+  // A second line inside a cell: the device and the submitted time under a player,
+  // the average and accuracy under the best. textContent throughout — a display name
+  // is player-supplied and never reaches the page as markup.
+  function sub(td, text) {
+    if (!text) return;
+    var span = document.createElement('span');
+    span.className = 'sub';
+    span.textContent = text;
+    td.appendChild(span);
+  }
+
+  // created_at is RFC 3339 UTC. Render it in the reader's own zone; if the value is
+  // missing or unparseable, show nothing rather than "Invalid Date".
+  function when(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+           ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
   function render(board) {
     tbody.textContent = '';
     if (!board.entries.length) {
@@ -42,8 +63,14 @@ const boardScript = `(function () {
       tail.className = 'tail';
       tail.textContent = '· ' + e.player_short;
       name.appendChild(tail);
+      sub(name, [when(e.created_at), e.device_label].filter(Boolean).join(' · '));
       cell(tr, String(e.score), 'score');
-      cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best');
+      var best = cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best');
+      if (typeof e.avg_ms === 'number') {
+        var detail = 'avg ' + Math.round(e.avg_ms) + ' ms';
+        if (typeof e.accuracy === 'number') { detail += ' · ' + Math.round(e.accuracy * 100) + '%'; }
+        sub(best, detail);
+      }
       cell(tr, e.tier, 'tier');
       cell(tr, e.platform, 'platform');
       tbody.appendChild(tr);
@@ -124,11 +151,16 @@ const indexHead = `<!doctype html>
   td.rank { color:var(--mute); font-family:var(--mono); width:2rem; }
   td.name { font-weight:600; }
   .tail { color:var(--mute); font-family:var(--mono); font-weight:400; font-size:.85em; }
+  .sub { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-weight:400;
+         font-size:.76rem; letter-spacing:.02em; white-space:normal; }
   td.score { color:var(--accent); font-family:var(--mono); font-size:1.1rem; }
   td.best { color:var(--dim); font-family:var(--mono); }
   td.tier { color:var(--accent2); font-size:.78rem; font-weight:700; letter-spacing:.1em; }
   td.platform { color:var(--mute); font-size:.78rem; text-transform:uppercase; letter-spacing:.1em; }
-  @media (max-width: 34rem) { td.platform, th.platform, td.best, th.best { display:none; } th, td { padding-inline:.9rem; } }
+  /* Narrow: drop PLATFORM and TIER, never BEST. The time is the headline of a reaction
+     board, and the avg/accuracy sub-line lives in that cell — hiding it took half of what
+     the row is for off every phone. */
+  @media (max-width: 34rem) { td.platform, th.platform, td.tier, th.tier { display:none; } th, td { padding-inline:.9rem; } }
   footer { margin-top:2rem; color:var(--mute); font-size:.85rem; }
   footer p { margin:.25rem 0; }
 </style>
@@ -138,7 +170,7 @@ const indexHead = `<!doctype html>
   <header>
     <h1>Share CT</h1>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>The reaction leaderboard for Controller Tester FGC. Hosted by a friend on a Raspberry Pi; scores are opt-in from the app.</p>
+    <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <h2 id="board-heading">Reaction leaderboard</h2>
@@ -159,6 +191,8 @@ const indexHead = `<!doctype html>
   </section>
   <footer>
     <p>Three boards, never mixed: a screen, a pad and a keyboard each add their own latency.</p>
+    <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
+       <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
     <p>Scores are recomputed on the server from the attempt timings. No accounts, no tracking; erase your data from the app.</p>
   </footer>
 </main>
