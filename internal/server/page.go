@@ -19,10 +19,11 @@ const boardScript = `(function () {
   var table = document.getElementById('board');
   var tbody = table.querySelector('tbody');
 
-  function cell(row, text, cls) {
+  function cell(row, text, cls, label) {
     var td = document.createElement('td');
     td.textContent = text;
     if (cls) td.className = cls;
+    if (label) td.setAttribute('data-label', label);
     row.appendChild(td);
     return td;
   }
@@ -64,16 +65,16 @@ const boardScript = `(function () {
       tail.textContent = '· ' + e.player_short;
       name.appendChild(tail);
       sub(name, [when(e.created_at), e.device_label].filter(Boolean).join(' · '));
-      var sc = cell(tr, String(e.score), 'score');
+      var sc = cell(tr, String(e.score), 'score', 'score');
       if (state.sort === 'score') { sc.classList.add('ranks'); } 
-      var best = cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best');
+      var best = cell(tr, (e.best_ms / FRAME_MS).toFixed(1) + 'f · ' + Math.round(e.best_ms) + ' ms', 'best', 'best');
       if (state.sort === 'fastest') { best.classList.add('ranks'); }
       if (typeof e.avg_ms === 'number') {
         var detail = 'avg ' + Math.round(e.avg_ms) + ' ms';
         if (typeof e.accuracy === 'number') { detail += ' · ' + Math.round(e.accuracy * 100) + '%'; }
         sub(best, detail);
       }
-      cell(tr, e.tier, 'tier');
+      cell(tr, e.tier, 'tier', 'tier');
       cell(tr, e.platform, 'platform');
       tbody.appendChild(tr);
     });
@@ -172,12 +173,29 @@ const indexHead = `<!doctype html>
      board, and the avg/accuracy sub-line lives in that cell — hiding it took half of what
      the row is for off every phone. */
   @media (max-width: 52rem) { td.platform, th.platform { display:none; } }
+  /* PHONE: stop being a table. Six columns in 390px produced a row that wrapped at every
+     cell boundary — "14.6f ·" over "243 ms" over "avg 250" over "ms · 67%" — which is what
+     Aaron saw. Each row becomes a block that reads top to bottom, like the app's own score
+     log, and the numbers carry their labels because the header row is gone. */
   @media (max-width: 34rem) {
-    td.tier, th.tier { display:none; }
-    th, td { padding-inline:.9rem; }
-    /* Let the player cell wrap on a phone: its width is set by the longest unwrapped
-       line, and a name plus a device sub-line pushed the table 149px past the screen. */
-    td.name, td.best { white-space:normal; }
+    thead { display:none; }
+    table, tbody, tr, td { display:block; width:auto; }
+    tr { position:relative; padding:.85rem 1rem .85rem 2.6rem; border-top:1px solid var(--line); }
+    tbody tr:hover td { background:none; }
+    td { padding:0; border:0; white-space:normal; }
+    td.rank { position:absolute; left:1rem; top:.85rem; width:auto; }
+    td.name { font-size:1.02rem; }
+    td.tier { display:inline-block; margin-top:.35rem; }
+    td.platform { display:none; }
+    td.score, td.best { display:inline-block; vertical-align:top; margin-top:.35rem; font-size:.95rem; }
+    td.score { margin-right:1.1rem; }
+    td.score::before, td.best::before, td.tier::before {
+      content: attr(data-label) " "; font-size:.68rem; letter-spacing:.12em;
+      text-transform:uppercase; color:var(--mute); margin-right:.3rem;
+    }
+    td.score.ranks, td.best.ranks { text-decoration:none; }
+    td.score.ranks::before, td.best.ranks::before { color:var(--accent3); }
+    .sub { margin-top:.2rem; }
   }
   footer { margin-top:2rem; color:var(--mute); font-size:.85rem; }
   footer p { margin:.25rem 0; }
