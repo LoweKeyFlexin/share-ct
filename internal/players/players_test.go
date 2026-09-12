@@ -169,6 +169,70 @@ func TestCreateRateLimitPerIP(t *testing.T) {
 	hs.register("Player", "203.0.113.5")
 }
 
+// TestRenameToAnonymous pins the way BACK to anonymous, which the rename handler
+// supports on purpose (Aaron, 2026-09-11: "entering nothing on the keyboard for Entry
+// should just default the player back to NO NAME") and which nothing asserted.
+//
+// It is pinned in BOTH payload shapes because they are different bytes that must mean
+// the same thing: `display_name` present and empty, and `display_name` OMITTED. They
+// agree only because renameRequest.DisplayName is a plain string rather than a *string,
+// so an absent key decodes to "" — a change to a pointer would silently split them, and
+// that is exactly the kind of change this test exists to fail.
+//
+// The distinction matters to the client: without this, a phone cannot tell whether
+// clearing the name field is supported, and the safe assumption is that it is not.
+func TestRenameToAnonymous(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"empty value", `{"display_name":""}`},
+		{"whitespace only", `{"display_name":"   "}`},
+		{"key omitted", `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hs := newHarness(t, stubScores{})
+			id, token := hs.register("Aaron", "")
+
+			rec, out := hs.do("PATCH", "/v1/players/"+id, tc.body, token, "")
+			if rec.Code != 200 {
+				t.Fatalf("clearing the name must be accepted, not refused: got %d %s",
+					rec.Code, rec.Body.String())
+			}
+			if got := out["display_name"]; got != AnonymousName {
+				t.Errorf("display_name = %v, want %q", got, AnonymousName)
+			}
+
+			// And it must STICK: the read path has its own Display() call, so a handler
+			// that answered correctly while storing something else would pass above.
+			rec, out = hs.do("GET", "/v1/players/"+id, "", "", "")
+			if rec.Code != 200 {
+				t.Fatalf("read back: got %d %s", rec.Code, rec.Body.String())
+			}
+			if got := out["display_name"]; got != AnonymousName {
+				t.Errorf("after read-back display_name = %v, want %q", got, AnonymousName)
+			}
+		})
+	}
+}
+
+// TestRenameAwayFromAnonymous is the other direction, and it is the case Aaron actually
+// hit on b115: enrolled with no name, then wanted one. Anonymous is not a trap.
+func TestRenameAwayFromAnonymous(t *testing.T) {
+	hs := newHarness(t, stubScores{})
+	id, token := hs.register("", "")
+
+	rec, out := hs.do("GET", "/v1/players/"+id, "", "", "")
+	if rec.Code != 200 || out["display_name"] != AnonymousName {
+		t.Fatalf("registered blank should read as anonymous: got %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec, out = hs.do("PATCH", "/v1/players/"+id, `{"display_name":"Fighter"}`, token, "")
+	if rec.Code != 200 {
+		t.Fatalf("naming an anonymous player: got %d %s", rec.Code, rec.Body.String())
+	}
+	if out["display_name"] != "Fighter" {
+		t.Errorf("display_name = %v, want Fighter", out["display_name"])
+	}
+}
+
 func TestRenameAuth(t *testing.T) {
 	hs := newHarness(t, stubScores{})
 	id, token := hs.register("Aaron", "")
