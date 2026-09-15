@@ -206,8 +206,14 @@ curl -sS 'https://ct.bond-haus.com/v1/board?source=pad&window=30d&sort=fastest&l
 # {"source":"pad","window":"30d","entries":[
 #   {"rank":1,"player_short":"3A4B","display_name":"Aaron","score":2220,"best_ms":170,"avg_ms":175,
 #    "accuracy":1,"tier":"LEGEND","platform":"ios",
-#    "device_label":"DualSense Wireless Controller","created_at":"2026-09-11T03:00:00Z"}]}
+#    "device_label":"DualSense Wireless Controller","created_at":"2026-09-11T03:00:00Z",
+#    "source":"pad","attempts_ms":[170,175,180],"misfires":0}]}
 ```
+
+Each row carries the complete winning run. `attempts_ms` is the ordered list of landed
+reaction times and `misfires` fills any remaining slots of the three-attempt trial. The row's
+device, timestamp, source, attempts and misfires all come from the same submission selected by
+`sort`; they are not the player's latest run or a mix of fields from different submissions.
 
 `source` defaults to `touch`, `window` (`all` or `30d`) to `all`, `sort` to `fastest`,
 `limit` to 50 (max 100). One row per player, their winning submission under the sort. The
