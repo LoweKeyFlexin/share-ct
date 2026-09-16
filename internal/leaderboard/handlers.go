@@ -198,12 +198,20 @@ type Board struct {
 // Every parameter has a default and every unknown value is a 400 naming it; sort in
 // particular never falls back, because a typo that quietly returned a different order
 // would be indistinguishable from the board being wrong.
-// recent is a feed of the newest submissions across every input, newest first. It takes
-// no source, window or sort: it is not a ranking, and offering a sort on a feed would
-// invite reading it as one.
+// recent is a feed of the newest submissions, newest first. An optional source narrows the
+// feed BEFORE the limit, so `source=pad&limit=50` means 50 pad runs rather than whichever pad
+// rows survive inside a mixed 50-run batch. With no source it remains the all-input feed used
+// by the web page. It takes no window or sort: it is not a ranking, and offering a sort on a
+// feed would invite reading it as one.
 func (m *Module) recent(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	source := q.Get("source")
+	if source != "" && !ValidSource(source) {
+		httpx.WriteBadRequest(w, "source")
+		return
+	}
 	limit := DefaultLimit
-	if v := r.URL.Query().Get("limit"); v != "" {
+	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
 			httpx.WriteBadRequest(w, "limit")
@@ -211,9 +219,9 @@ func (m *Module) recent(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = min(n, MaxLimit)
 	}
-	entries, err := m.store.Recent(r.Context(), limit)
+	entries, err := m.store.Recent(r.Context(), source, limit)
 	if err != nil {
-		m.log.Error("recent", "error", err.Error())
+		m.log.Error("recent", "source", source, "error", err.Error())
 		httpx.WriteError(w, http.StatusInternalServerError, "internal")
 		return
 	}

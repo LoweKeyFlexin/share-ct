@@ -218,21 +218,28 @@ func bestPerPlayer(sort, source string) string {
 	WHERE ` + where
 }
 
-// Recent is the newest submissions across every input, newest first — a feed of activity
-// rather than a ranking. It is deliberately NOT one row per player: the board collapses a
-// player to their best, so a session of five trials shows as one line and the page looks
-// static. Aaron: "I submitted more than one Touch score today and it's just showing my
-// single attempt."
+// Recent is the newest submissions, newest first — a feed of activity rather than a ranking.
+// An empty source mixes every input; a named source is filtered in SQL BEFORE LIMIT so a busy
+// touch feed cannot crowd pad or keyboard out of their own 50-run client views. It is
+// deliberately NOT one row per player: the board collapses a player to their best, so a
+// session of five trials shows as one line and the page looks static. Aaron: "I submitted
+// more than one Touch score today and it's just showing my single attempt."
 //
 // Rank here is position in the feed, which is chronological, not a standing.
-func (s *Store) Recent(ctx context.Context, limit int) ([]Entry, error) {
-	const q = `
+func (s *Store) Recent(ctx context.Context, source string, limit int) ([]Entry, error) {
+	q := `
 	  SELECT s.player_id, p.display_name, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform,
 	         s.device_label, s.created_at, s.source, s.attempts_ms, s.misfires
-	  FROM submissions s JOIN players p ON p.id = s.player_id
+	  FROM submissions s JOIN players p ON p.id = s.player_id`
+	args := []any{limit}
+	if source != "" {
+		q += ` WHERE s.source = ?`
+		args = []any{source, limit}
+	}
+	q += `
 	  ORDER BY s.created_at DESC, s.id DESC
 	  LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("recent: %w", err)
 	}
