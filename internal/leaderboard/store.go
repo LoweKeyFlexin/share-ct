@@ -261,6 +261,9 @@ func (s *Store) Recent(ctx context.Context, source string, limit int) ([]Entry, 
 		// themselves. It must never reach a reader as an empty string, and Display is
 		// the single place that word is chosen.
 		e.DisplayName = players.Display(e.DisplayName)
+		// THE TIME LADDER ALONE. e.Rank here is a position in a chronological feed, not a
+		// standing, so TierNameForRow must never be called with it — that would paint
+		// LEGEND on the three newest submissions whatever their times (the app's #6447).
 		e.Tier = TierName(e.BestMs)
 		e.DeviceLabel = label.String
 		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
@@ -318,7 +321,7 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		// themselves. It must never reach a reader as an empty string, and Display is
 		// the single place that word is chosen.
 		e.DisplayName = players.Display(e.DisplayName)
-		e.Tier = TierName(e.BestMs)
+		e.Tier = TierNameForRow(e.BestMs, e.Rank)
 		e.DeviceLabel = label.String
 		e.CreatedAt = time.Unix(created, 0).UTC().Format(time.RFC3339)
 		// attempts_ms is stored as the JSON array the client sent and the score was
@@ -375,6 +378,7 @@ func (s *Store) Bests(ctx context.Context, playerID string) (players.Bests, int,
 		if err := rows.Scan(&source, &sum.Score, &sum.BestMs, &sum.AvgMs, &sum.Accuracy, &sum.Platform, &sum.CreatedAt); err != nil {
 			return err
 		}
+		// The time ladder alone: a player summary has no standing to read.
 		sum.Tier = TierName(sum.BestMs)
 		b.Set(source, &sum)
 		return nil
