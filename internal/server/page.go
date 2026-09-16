@@ -232,7 +232,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".06"
+const pageVersion = ".07"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
