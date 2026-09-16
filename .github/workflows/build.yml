@@ -215,7 +215,13 @@ jobs:
           [ "$(echo "$board" | jq -r '.entries[0].score')" = 2100 ]
           [ "$(echo "$board" | jq -r '.entries[0].best_ms')" = 200 ]
           [ "$(echo "$board" | jq -r '.entries[0].avg_ms')" = 205 ]
-          [ "$(echo "$board" | jq -r '.entries[0].tier')" = DIAMOND ]
+          # LEGEND BY STANDING, NOT BY TIME. This row is rank 1 on a one-row board, and
+          # LEGEND is granted for a top-three placement (Aaron, 2026-09-14: a time cannot
+          # earn it). 200 ms is 12.0f, which is MASTER on the time ladder — so asserting
+          # LEGEND here asserts the PROMOTION, and a regression to a time-based ladder
+          # would show up as MASTER. The rank boundaries themselves are unit-tested in
+          # TestOnlyARankingGrantsLegend; this is the end-to-end proof it reaches the wire.
+          [ "$(echo "$board" | jq -r '.entries[0].tier')" = LEGEND ]
           [ "$(echo "$board" | jq -r '.entries[0].display_name')" = Smoke ]
           [ "$(curl -fsS "$api/v1/board?source=pad" | jq -r '.entries | length')" = 0 ]
 
