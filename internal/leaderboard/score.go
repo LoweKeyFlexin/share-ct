@@ -41,33 +41,65 @@ func IsValidHighScore(bestMs float64) bool {
 
 // TierName is the SF6 ranked-ladder skill tier for a best reaction, UNRANKED outside
 // the plausibility band.
+//
+// LEGEND IS NOT ON THIS LADDER, and cannot be reached by any time. Aaron ruled it off on
+// 2026-09-14 — "they should compete online if they want legend" — so a time tops out at
+// ULTIMATE MASTER and LEGEND is earned by STANDING, on the board, at rank 1-3. Use
+// TierNameForRow for anything a player sees on a ranked board; this function is the time
+// ladder alone and is what a feed or a player summary wants.
+//
+// The bands are r15's and are pinned by testdata/reaction_score.json, which is the same
+// parity fixture the app checks its own ladder against. THE TWO MOVE TOGETHER OR NEITHER
+// MOVES: this ladder drifted from the app's for five days because the fixture here was a
+// copy taken on 2026-09-11 and the ruling landed on 09-14, so the suite stayed green while
+// serving a superseded ladder.
 func TierName(bestMs float64) string {
 	if !(bestMs > 0) || !IsValidHighScore(bestMs) {
 		return "UNRANKED"
 	}
 	f := Frames(bestMs)
 	switch {
-	case f < 10.5:
-		return "LEGEND"
-	case f < 11:
-		return "ULTIMATE MASTER"
 	case f < 11.5:
-		return "HIGH MASTER"
+		return "ULTIMATE MASTER"
 	case f < 12:
-		return "MASTER"
+		return "HIGH MASTER"
 	case f < 13:
+		return "MASTER"
+	case f < 14.5:
 		return "DIAMOND"
-	case f < 14:
+	case f < 16:
 		return "PLATINUM"
-	case f < 15.5:
+	case f < 18:
 		return "GOLD"
-	case f < 17:
+	case f < 20.5:
 		return "SILVER"
-	case f < 19:
+	case f < 25:
 		return "BRONZE"
 	default:
 		return "ROOKIE"
 	}
+}
+
+// TierNameForRow is the tier a player SEES on a ranked board: the time ladder, with LEGEND
+// granted for a top-three STANDING.
+//
+// A board row is a run, so its tier describes that run — the time it holds, plus the place
+// that time took. rank is 1-based; 0 or negative is an upstream bug and never a podium.
+//
+// ONLY A RANKING MAY PASS A RANK HERE. Recent's "rank" is a position in a chronological
+// feed and Bests has no standing at all, so both use TierName and neither may call this —
+// passing a feed position in would paint LEGEND on the three newest submissions whatever
+// their times, which is precisely the defect the app fixed on its own RECENT board in
+// #6447. A rank is only a standing on a board that ranks.
+func TierNameForRow(bestMs float64, rank int) string {
+	name := TierName(bestMs)
+	if name == "UNRANKED" {
+		return name
+	}
+	if rank >= 1 && rank <= 3 {
+		return "LEGEND"
+	}
+	return name
 }
 
 var gradeLadder = []string{"F", "D", "C", "B", "B+", "A", "A+", "S", "S+", "SS"}

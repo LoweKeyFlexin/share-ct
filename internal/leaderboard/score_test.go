@@ -11,7 +11,17 @@ import (
 
 // fixtureBlob is the git blob id of tools/parity-fixtures/reaction_score.json in the
 // app repo (see testdata/README.md). The copy must stay byte-identical.
-const fixtureBlob = "7999aa76b48fcaee48fbc727164001a27fca9ebf"
+//
+// WHAT THIS PIN CAN AND CANNOT CATCH, because the difference cost five days. It compares
+// the copy to a REMEMBERED hash, so it fires when somebody edits the copy here — and it
+// stays silent when the APP's fixture moves, which is the direction that actually happened.
+// The 09-11 copy kept matching its own 09-11 hash while the app's ladder changed on 09-14,
+// so this suite was green the whole time it served a superseded ladder, and the app's board
+// page showed LEGEND for a time three days after LEGEND stopped being a time.
+//
+// Updating this constant is therefore part of updating the fixture, never a separate
+// chore: a stale pin is not a failing test, it is a passing one.
+const fixtureBlob = "bb271c50e92f87bb76e9c3926df665329fd67c8f"
 
 type fixture struct {
 	Version   int `json:"version"`
@@ -133,4 +143,55 @@ func TestScoreTrialEdges(t *testing.T) {
 	if CapGrade("SS", "??") != "SS" || CapGrade("A", "S") != "A" || CapGrade("S", "A") != "A" {
 		t.Error("CapGrade ladder")
 	}
+}
+
+// TestLegendIsUnreachableByTime pins Aaron's 2026-09-14 ruling structurally rather than by
+// checking one example: "they should compete online if they want legend."
+//
+// The time ladder tops out at ULTIMATE MASTER. If a future edit puts LEGEND back on it —
+// which is what this service shipped for five days — this fails whatever band it is added
+// at, because it sweeps the whole plausible range rather than sampling it.
+func TestLegendIsUnreachableByTime(t *testing.T) {
+	for ms := 1.0; ms <= 4000; ms += 0.5 {
+		if got := TierName(ms); got == "LEGEND" {
+			t.Fatalf("TierName(%.1f) = LEGEND: no time may earn it (Aaron, 2026-09-14). "+
+				"LEGEND is a STANDING, granted by TierNameForRow at rank 1-3.", ms)
+		}
+	}
+	// The control: the sweep must actually be reaching real tiers, or a TierName that
+	// returned "" for everything would pass the loop above.
+	if TierName(170) != "ULTIMATE MASTER" || TierName(230) != "DIAMOND" {
+		t.Fatalf("the sweep is not exercising the ladder: 170 -> %q, 230 -> %q",
+			TierName(170), TierName(230))
+	}
+}
+
+// TestOnlyARankingGrantsLegend is the assertion a reasonable implementer gets wrong.
+//
+// Recent's rank is a position in a chronological feed and Bests has no standing at all, so
+// neither may pass a rank to TierNameForRow — doing so would paint LEGEND on the three
+// newest submissions whatever their times. The app shipped exactly that defect on its own
+// RECENT board and fixed it in #6447; this is the same rule, server side.
+func TestOnlyARankingGrantsLegend(t *testing.T) {
+	const slow = 400.0 // 24f — BRONZE, nowhere near the top of the ladder
+
+	if got := TierNameForRow(slow, 1); got != "LEGEND" {
+		t.Errorf("TierNameForRow(%.0f, rank 1) = %q, want LEGEND: a top-three STANDING "+
+			"grants it regardless of the time", slow, got)
+	}
+	if got := TierNameForRow(slow, 4); got != TierName(slow) {
+		t.Errorf("TierNameForRow(%.0f, rank 4) = %q, want the time ladder's %q",
+			slow, got, TierName(slow))
+	}
+	// A rank is 1-based; 0 or negative is an upstream bug and never a podium.
+	for _, r := range []int{0, -1} {
+		if got := TierNameForRow(slow, r); got == "LEGEND" {
+			t.Errorf("TierNameForRow(%.0f, rank %d) = LEGEND: a non-positive rank is a bug, "+
+				"not a placement", slow, r)
+		}
+	}
+	// AND THE FEED MUST NOT BE ABLE TO ASK. TierName is what Recent and Bests call, and it
+	// takes no rank at all — so the mistake is unrepresentable rather than merely avoided.
+	// If this stops compiling because TierName grew a rank parameter, that is the defect.
+	var _ func(float64) string = TierName
 }

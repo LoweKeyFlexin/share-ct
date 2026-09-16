@@ -167,7 +167,9 @@ func TestRoundTrip(t *testing.T) {
 	if code != 200 || len(entries) != 1 {
 		t.Fatalf("board: %d %v", code, board)
 	}
-	if e := entries[0].(map[string]any); e["score"] != float64(2100) || e["tier"] != "DIAMOND" || e["display_name"] != "Aaron" {
+	// Rank 1 on a one-row board: LEGEND by STANDING, not by 200 ms (which is 12.0f =
+	// MASTER on the time ladder). See TierNameForRow.
+	if e := entries[0].(map[string]any); e["score"] != float64(2100) || e["tier"] != "LEGEND" || e["display_name"] != "Aaron" {
 		t.Errorf("entry %v", e)
 	}
 	if code, prof := call("GET", "/v1/players/"+id, "", ""); code != 200 || prof["submissions"] != float64(1) {

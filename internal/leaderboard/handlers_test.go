@@ -156,7 +156,9 @@ func TestSubmitRecomputesAndRanks(t *testing.T) {
 
 	entries := hs.board("?source=touch")
 	if len(entries) != 1 || entries[0]["avg_ms"] != float64(205) || entries[0]["accuracy"] != float64(1) ||
-		entries[0]["score"] != float64(2100) || entries[0]["tier"] != "DIAMOND" || entries[0]["player_short"] != players.Short(id) ||
+		// Rank 1 on a one-row board: LEGEND by STANDING. 200 ms is 12.0f, which is MASTER
+		// on the time ladder, so this asserts the promotion rather than a time.
+		entries[0]["score"] != float64(2100) || entries[0]["tier"] != "LEGEND" || entries[0]["player_short"] != players.Short(id) ||
 		entries[0]["display_name"] != "Player 1" || entries[0]["platform"] != "ios" || entries[0]["rank"] != float64(1) {
 		t.Errorf("board shows %v", entries)
 	}
@@ -322,7 +324,12 @@ func TestBoardOrderingOneRowPerPlayer(t *testing.T) {
 		id    string
 		score float64
 		tier  string
-	}{{c, 2104, "MASTER"}, {b, 2100, "DIAMOND"}, {a, 2100, "DIAMOND"}, {d, 1350, "DIAMOND"}}
+		// THE BOARD IS A RANKING, so a row's tier is its time tier with LEGEND for a
+		// top-three STANDING. Ranks 1-3 are LEGEND whatever their times; rank 4 falls to
+		// the time ladder, and 200 ms is 12.0f, which is MASTER. Aaron, 2026-09-14:
+		// "they should compete online if they want legend" — it is earned here, on a
+		// board, and nowhere else.
+	}{{c, 2104, "LEGEND"}, {b, 2100, "LEGEND"}, {a, 2100, "LEGEND"}, {d, 1350, "MASTER"}}
 	if len(entries) != len(want) {
 		t.Fatalf("%d entries, want %d: %v", len(entries), len(want), entries)
 	}
@@ -332,6 +339,9 @@ func TestBoardOrderingOneRowPerPlayer(t *testing.T) {
 			t.Errorf("row %d = %v, want %s %v %s", i+1, e, players.Short(w.id), w.score, w.tier)
 		}
 	}
+	// LEGEND here is earned by the STANDING (a one-row board, so rank 1), not by 170 ms.
+	// Before the ladder was corrected this row read LEGEND for its time and would have
+	// passed for the wrong reason.
 	if pad := hs.board("?source=pad"); len(pad) != 1 || pad[0]["tier"] != "LEGEND" || pad[0]["score"] != float64(2220) {
 		t.Errorf("pad board %v", pad)
 	}
@@ -413,7 +423,11 @@ func TestBestsAndDeleteErasesSubmissions(t *testing.T) {
 		t.Fatalf("profile: %d %s", rec.Code, rec.Body.String())
 	}
 	best := out["best"].(map[string]any)
-	if best["keyboard"] != nil || best["touch"].(map[string]any)["score"] != float64(2100) || best["pad"].(map[string]any)["tier"] != "LEGEND" {
+	// BESTS HAS NO STANDING, so no row here can be LEGEND however fast it is. 170 ms is
+	// 10.2f — the top of the time ladder, ULTIMATE MASTER. This read LEGEND before the
+	// ladder was corrected, which is the exact shape Aaron ruled off on 2026-09-14: a
+	// player summary is not a board and cannot award a board's honour.
+	if best["keyboard"] != nil || best["touch"].(map[string]any)["score"] != float64(2100) || best["pad"].(map[string]any)["tier"] != "ULTIMATE MASTER" {
 		t.Errorf("best %v", best)
 	}
 
