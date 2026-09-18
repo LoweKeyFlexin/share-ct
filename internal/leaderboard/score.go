@@ -232,3 +232,77 @@ func ScoreTrial(samples []float64, misfires int) TrialScore {
 		Flawless: flawless, Score: score, Grade: grade,
 	}
 }
+
+// ── Backing a fast best (app issue #6564) ────────────────────────────────────
+
+// BackingThresholdFrames and BackingWithinFrames are the qualification rule for a fast
+// best, ruled by Aaron on 2026-09-18 after a single anticipation took #1: a 10.1f best
+// standing on a trial whose other two attempts were 17.6f and 17.7f.
+//
+// Nothing the app or this server already checked could see it. The press was after GO,
+// outside the sub-frame reroute, over MinPlausibleReactionMs, inside the 10-frame floor,
+// and the trial had all three attempts land — so every gate passed and the row ranked.
+// The board's own rule was what rewarded it: fastest single, with nothing behind it.
+//
+// THE DISCRIMINATOR IS FASTEST VERSUS SECOND-FASTEST, NOT FASTEST VERSUS SLOWEST. A 3x
+// fastest-to-slowest spread rule was considered first and would NOT have caught that row:
+// 10.1f against 17.7f is only 1.75x. A genuine fast player is fast on every attempt, so
+// the gap between their best and their next-best is small; an anticipation is a gap.
+const (
+	// BackingThresholdFrames is the speed at or above which no backing is required.
+	// It is the MASTER boundary on the ladder rather than a new number, and nobody
+	// anticipates their way to a slow time — policing one would only punish a casual
+	// player for being inconsistent.
+	BackingThresholdFrames float64 = 13.5
+	// BackingWithinFrames is how close the second-fastest attempt must be. Aaron ruled
+	// 2 rather than 1: one frame is tighter than genuine trial-to-trial variance and
+	// would cut real players for noise.
+	BackingWithinFrames float64 = 2
+	// BackingSinceUnix GRANDFATHERS every run submitted before it. Aaron, 2026-09-18:
+	// "Let's grandfather all existing EXCEPT for that 10 frame first place", and then,
+	// on the date of that run, "That one was September 16th. You can lop that one off
+	// right there."
+	//
+	// So the cutoff IS the dethroning. It is 2026-09-16T00:00:00Z, and the row it
+	// removes is the 10.05f touch run submitted at 09:34 that morning against a
+	// second-fastest of 17.56f. Every one of the other nineteen rows on the four
+	// boards predates it and keeps its place, including two of Aaron's own that would
+	// not pass the rule either.
+	//
+	// A DATE RATHER THAN A ROW ID ON PURPOSE. A keep-list is a second source of truth
+	// that has to be maintained and audited; a date is one number, reads as a policy
+	// rather than as a grudge, and says the honest thing — the standard changed on this
+	// day and is not applied backwards.
+	BackingSinceUnix int64 = 1789603200
+)
+
+// Qualifies reports whether a trial's fastest attempt may stand on a ranked board.
+//
+// A best at or slower than BackingThresholdFrames always qualifies. A faster one
+// qualifies only if a SECOND attempt in the SAME trial landed within BackingWithinFrames
+// of it — a later trial cannot reach back and validate an earlier one, which is the
+// misreading the app's card copy was rewritten to avoid.
+//
+// A trial with fewer than two landed attempts cannot back anything up, so a single fast
+// attempt below the threshold does not qualify however fast it was.
+func Qualifies(attemptsMs []float64) bool {
+	if len(attemptsMs) == 0 {
+		return false
+	}
+	sorted := slices.Clone(attemptsMs)
+	slices.Sort(sorted)
+	best := sorted[0]
+	if Frames(best) >= BackingThresholdFrames {
+		return true
+	}
+	if len(sorted) < 2 {
+		return false
+	}
+	// ADDED TO best RATHER THAN SUBTRACTED FROM sorted[1], to match qualifiedSQL's
+	// `je.value <= s.best_ms + <within>` exactly. The two forms are not the same in
+	// floating point: at the boundary the subtraction loses a bit and reports a second
+	// attempt EXACTLY two frames back as outside the window, while the addition does
+	// not. Go and the SQL must agree on every input or a run qualifies in a unit test
+	// and vanishes from the board, so they are written the same way on purpose.
+	return sorted[1] <= best+BackingWithinFrames*FrameMs
+}

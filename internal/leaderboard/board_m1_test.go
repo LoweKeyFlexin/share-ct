@@ -143,7 +143,12 @@ func TestBoardSortOrders(t *testing.T) {
 	// would pass whatever the handler did.
 	//   SLOWPOKE: 200/205/210, no misfires  -> best 200, the clean 2100
 	//   QUICK:    180/500 plus a misfire    -> best 180, a lower score
-	slowpoke, quick := []float64{200, 205, 210}, []float64{180, 500}
+	// QUICK's second attempt used to be 500: a fast single with nothing behind it, which
+	// is the anticipation shape the backing rule now keeps off a ranked board (#6564).
+	// This test is about SORT ORDER, so the fixture has to be a run that ranks — 205
+	// backs the 180 up within two frames. The MISFIRE is what still makes QUICK score
+	// lower than SLOWPOKE, which is the disagreement the cases below rely on.
+	slowpoke, quick := []float64{200, 205, 210}, []float64{180, 205}
 	if ScoreTrial(quick, 1).Score >= ScoreTrial(slowpoke, 0).Score {
 		t.Fatalf("fixture must disagree: QUICK scores %d, SLOWPOKE %d", ScoreTrial(quick, 1).Score, ScoreTrial(slowpoke, 0).Score)
 	}
@@ -188,7 +193,11 @@ func TestBoardFastestTieBreaks(t *testing.T) {
 	_, late := hs.named("LATE")
 	_, lower := hs.named("LOWER")
 	base := hs.now
-	hs.submitAt(lower, on("Pad", trial("c", "pad", []float64{200, 300, 400}, 0)), base) // best 200, the lowest score, first in
+	// 232 rather than 300: this row exists to hold the LOWEST score on an equal best_ms,
+	// which it still does (a 200 spread scores no consistency bonus where EARLY's 10
+	// scores 100), but 300 left the 200 unbacked and the backing rule would drop the row
+	// from the board entirely — taking the tie-break this test measures with it (#6564).
+	hs.submitAt(lower, on("Pad", trial("c", "pad", []float64{200, 232, 400}, 0)), base) // best 200, the lowest score, first in
 	hs.submitAt(early, on("Pad", trial("a", "pad", []float64{200, 205, 210}, 0)), base.Add(time.Second))
 	hs.submitAt(late, on("Pad", trial("b", "pad", []float64{200, 205, 210}, 0)), base.Add(2*time.Second))
 
