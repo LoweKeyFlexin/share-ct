@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/LoweKeyFlexin/share-ct/internal/players"
@@ -197,18 +198,55 @@ type Entry struct {
 	Misfires   int       `json:"misfires"`
 }
 
+// backingThresholdMs and backingWithinMs are the SQL spellings of the Go constants, built
+// from them at init rather than typed twice: 13.5 frames and 2 frames in milliseconds. A
+// hand-written 225.0 here would be a second source of truth for a number Aaron ruled once.
+var (
+	backingThresholdMs = strconv.FormatFloat(BackingThresholdFrames*FrameMs, 'f', -1, 64)
+	backingWithinMs    = strconv.FormatFloat(BackingWithinFrames*FrameMs, 'f', -1, 64)
+	backingSinceUnix   = strconv.FormatInt(BackingSinceUnix, 10)
+)
+
+// qualifiedSQL keeps a run off a RANKED board unless its fastest attempt is backed up —
+// app issue #6564, ruled 2026-09-18 after a single anticipation took #1 with 10.1f
+// standing on a trial of 17.6f and 17.7f.
+//
+// The rule is leaderboard.Qualifies, expressed in SQL so it applies to EVERY EXISTING ROW
+// at read time rather than to new submissions only. Nothing is deleted and no column is
+// added: a run that stops ranking still exists, still belongs to the player, and comes
+// back if this predicate is ever relaxed. Dethroning by filter is reversible; dethroning
+// by DELETE is not.
+//
+// best_ms is the server's own recompute and is validated at insert to equal
+// min(attempts_ms), so it IS the fastest attempt and needs no second pass here.
+//
+// ORDER BY ... LIMIT 1 OFFSET 1 rather than "the smallest value greater than the min":
+// two attempts at the identical time are a legitimate and perfectly backed-up pair, and
+// a strict > would throw exactly that case away.
+//
+// A trial with one landed attempt yields NO ROW from the subquery, so the comparison is
+// NULL and the run does not qualify. That is the wanted answer — a lone fast attempt has
+// nothing behind it — and it is why this is written as a positive test rather than as a
+// NOT of a disqualifying one, which NULL would have made true.
+var qualifiedSQL = `(
+	  s.created_at < ` + backingSinceUnix + `
+	  OR s.best_ms >= ` + backingThresholdMs + `
+	  OR (SELECT je.value FROM json_each(s.attempts_ms) je ORDER BY je.value LIMIT 1 OFFSET 1)
+	     <= s.best_ms + ` + backingWithinMs + `
+	)`
+
 // bestPerPlayer numbers each player's submissions on one source from best to worst in
 // sort's order; row 1 is the one the board shows. The same order ranks the board itself,
 // so the row shown is the row the ranking is about: under fastest a player's slower,
 // higher-scoring trial is not their entry, and neither is its pad.
 func bestPerPlayer(sort, source string) string {
-	where := "s.source = ? AND s.created_at >= ?"
+	where := "s.source = ? AND s.created_at >= ? AND " + qualifiedSQL
 	if source == SourceAll {
 		// The mixed board ranks a player's best across all three inputs, so the partition
 		// stays per-player and only the filter widens. A player appears once, with whichever
 		// input produced the row the metric selects — which is why the row carries its own
 		// source: on this board the input is data, not a heading.
-		where = "s.created_at >= ?"
+		where = "s.created_at >= ? AND " + qualifiedSQL
 	}
 	return `
 	SELECT s.id, s.player_id, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.device_label,
@@ -365,11 +403,11 @@ func (s *Store) Rank(ctx context.Context, source, playerID string) (rank, size i
 // Bests is a player's best submission per source and their submission count; it
 // backs GET /v1/players/{id}.
 func (s *Store) Bests(ctx context.Context, playerID string) (players.Bests, int, error) {
-	const q = `WITH best AS (
-	    SELECT source, score, best_ms, avg_ms, accuracy, platform, created_at,
+	q := `WITH best AS (
+	    SELECT s.source, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.created_at,
 	           ROW_NUMBER() OVER (PARTITION BY source
-	                              ORDER BY score DESC, best_ms ASC, created_at ASC, id ASC) AS rn
-	    FROM submissions WHERE player_id = ?)
+	                              ORDER BY s.score DESC, s.best_ms ASC, s.created_at ASC, s.id ASC) AS rn
+	    FROM submissions s WHERE player_id = ? AND ` + qualifiedSQL + `)
 	  SELECT source, score, best_ms, avg_ms, accuracy, platform, created_at FROM best WHERE rn = 1`
 	var b players.Bests
 	if err := s.eachRow(ctx, q, []any{playerID}, func(rows *sql.Rows) error {
