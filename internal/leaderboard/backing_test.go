@@ -111,3 +111,41 @@ func TestAPlayerKeepsTheirBestQualifyingRun(t *testing.T) {
 		t.Errorf("best_ms = %v, want the BACKED-UP trial's 188: the player keeps their place with the run that qualifies, not the one that does not", best)
 	}
 }
+
+// The cutoff is a DATE, and a bare unix integer cannot look wrong.
+//
+// THIS TEST EXISTS BECAUSE THE FIRST SHIPPED VALUE WAS WRONG BY ONE DAY — 1789603200 is
+// 2026-09-17T00:00:00Z, not the 16th — and it grandfathered the exact row the cutoff was
+// chosen to remove. The deploy was green, the board was unchanged, and nothing failed.
+//
+// Nor could it: every other test here derives its timestamps FROM BackingSinceUnix, so
+// they hold for any value it takes. A suite that can only compare a constant to itself
+// will pass while the constant is wrong, which is worse than no test at all because it
+// reads as coverage. This one asserts the value against the calendar.
+func TestTheCutoffIsTheSixteenth(t *testing.T) {
+	got := time.Unix(BackingSinceUnix, 0).UTC().Format(time.RFC3339)
+	const want = "2026-09-16T00:00:00Z"
+	if got != want {
+		t.Errorf("BackingSinceUnix = %d (%s), want %s.\n"+
+			"Aaron ruled the date on the row itself: the 10.05f touch run was submitted at "+
+			"2026-09-16T09:34:25Z, so the cutoff must sit BEFORE it on the same day. "+
+			"A cutoff of the 17th grandfathers the run it was chosen to dethrone.", BackingSinceUnix, got, want)
+	}
+}
+
+// And the row that prompted all of this must actually fall on the dethroned side.
+//
+// Belt and braces with the test above on purpose: that one pins the constant to a date a
+// human can read, this one pins it to the CONSEQUENCE, so a future adjustment that keeps
+// the date honest but moves it past the row still fails.
+func TestTheRowThatPromptedThisIsOnTheDethronedSide(t *testing.T) {
+	const rowSubmittedAt = 1789551265 // 2026-09-16T09:34:25Z, read from the live board
+	if rowSubmittedAt < BackingSinceUnix {
+		t.Errorf("the 10.05f run (%s) sits BEFORE the cutoff (%s) and would be grandfathered",
+			time.Unix(rowSubmittedAt, 0).UTC().Format(time.RFC3339),
+			time.Unix(BackingSinceUnix, 0).UTC().Format(time.RFC3339))
+	}
+	if Qualifies(anticipation) {
+		t.Error("and it must not qualify on its own merits either")
+	}
+}
