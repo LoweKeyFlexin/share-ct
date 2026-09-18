@@ -273,7 +273,7 @@ const (
 	// that has to be maintained and audited; a date is one number, reads as a policy
 	// rather than as a grudge, and says the honest thing — the standard changed on this
 	// day and is not applied backwards.
-	BackingSinceUnix int64 = 1789603200
+	BackingSinceUnix int64 = 1789516800
 )
 
 // Qualifies reports whether a trial's fastest attempt may stand on a ranked board.
