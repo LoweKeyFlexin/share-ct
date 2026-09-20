@@ -143,7 +143,7 @@ The content-policy refusal is the same on registration and rename:
 submitted name. An empty or whitespace-only name is still accepted as anonymous.
 The embedded policy has format `CT-NAME-FILTER` v1, normalization
 `ASCII_UPPER_SPACE_V1`, and matching revision `ASCII_NAME_CANDIDATES_V2`; its
-SHA-256 is `6ab27f63e0e76f1ef1378de977c94913f312b21a646813a67e98ea4cf55ecde3`.
+SHA-256 is `fa64c27413bd1557b9b4dabfab08a4fea61da8ce9e09ccb7f6bbfa9a790a8688`.
 The startup log prints this revision hash so an operator can identify the deployed
 policy. The digest asset contains no plaintext reviewed terms. It must be updated
 together with the app's `tools/name-filter/blocked-names-v1.sha256` and parity tests.

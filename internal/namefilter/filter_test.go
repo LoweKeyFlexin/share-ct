@@ -59,10 +59,10 @@ func TestMatchingModesAndEvasions(t *testing.T) {
 }
 
 func TestEmbeddedPolicyAndMalformedAsset(t *testing.T) {
-	if got := AssetSHA256(); got != "6ab27f63e0e76f1ef1378de977c94913f312b21a646813a67e98ea4cf55ecde3" {
+	if got := AssetSHA256(); got != "fa64c27413bd1557b9b4dabfab08a4fea61da8ce9e09ccb7f6bbfa9a790a8688" {
 		t.Errorf("asset revision changed to %s; compare with app manifest", got)
 	}
-	if len(active.whole) != 29 || len(active.token) != 308 || len(active.substring) != 25 {
+	if len(active.whole) != 29 || len(active.token) != 381 || len(active.substring) != 25 {
 		t.Errorf("unexpected embedded policy counts: whole=%d token=%d substring=%d",
 			len(active.whole), len(active.token), len(active.substring))
 	}
