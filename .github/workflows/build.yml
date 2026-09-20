@@ -165,7 +165,15 @@ jobs:
           echo "--- first boot ---"; cat first-boot.log
           grep -q '"msg":"starting"' first-boot.log
           grep -q '"database_path":"/data/leaderboard.db"' first-boot.log
-          grep -q '"msg":"migrations","applied":5,"from":0,"to":5' first-boot.log
+          # The expected count is DERIVED from the repo, not hardcoded. It was `5`, which
+          # meant the first migration anyone added failed this smoke step on a boot that
+          # was completely healthy (006 collapse, 2026-09-20: the server applied it,
+          # migrated 0->6, and served board/404 correctly — this line still failed the
+          # build). A tripwire that fires on correct behaviour trains people to edit the
+          # tripwire, so it now counts the files it is asserting about.
+          want=$(ls migrations/*.sql | wc -l | tr -d ' ')
+          echo "expecting $want migrations applied on a fresh database"
+          grep -q "\"msg\":\"migrations\",\"applied\":$want,\"from\":0,\"to\":$want" first-boot.log
           # Go on Linux reports the 0.0.0.0 wildcard as the dual-stack socket [::]:8080;
           # either spelling is "every interface, port 8080", which is what the tunnel needs.
           grep -Eq '"msg":"listening","addr":"(0\.0\.0\.0|\[::\]):8080"' first-boot.log
