@@ -72,3 +72,12 @@ func TestEmbeddedPolicyAndMalformedAsset(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkRejectsSafeMaxLength(b *testing.B) {
+	const name = "MAXIMUM SAFE NAME 99"
+	for i := 0; i < b.N; i++ {
+		if Rejects(name) {
+			b.Fatal("benchmark fixture unexpectedly rejected")
+		}
+	}
+}

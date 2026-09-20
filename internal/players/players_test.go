@@ -223,6 +223,9 @@ func TestRenameAuth(t *testing.T) {
 	if rec, out := hs.do("PATCH", "/v1/players/"+id, `{"display_name":"x"}`, token, ""); rec.Code != 422 || out["reason"] != "name_too_short" {
 		t.Errorf("bad name: got %d %s", rec.Code, rec.Body.String())
 	}
+	if rec, out := hs.do("PATCH", "/v1/players/"+id, `{"display_name":"Aaron!"}`, token, ""); rec.Code != 422 || out["reason"] != "name_invalid_characters" {
+		t.Errorf("punctuation must be rejected, never stripped: got %d %s", rec.Code, rec.Body.String())
+	}
 
 	r := httptest.NewRequest("PATCH", "/v1/players/"+id, strings.NewReader(body))
 	r.Header.Set("Authorization", "bearer "+token)
