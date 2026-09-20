@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/LoweKeyFlexin/share-ct/internal/namefilter"
 )
 
 // MaxNameLen and minNameLen are the app's CTUserIdentity.usernameMaxLen and the
@@ -42,12 +44,24 @@ const (
 // (minNameLen is 3), and the word itself stays reserved so it cannot be claimed either.
 const AnonymousName = "NO NAME"
 
+// MaskedName is shown for a legacy display name that the current policy would
+// refuse. The owner and their scores remain unchanged; only public reads are
+// masked until the player chooses another name.
+const MaskedName = "NAME HIDDEN"
+
 // Display is the stored display name as a reader should see it. Apply it at EVERY point
 // a stored name reaches JSON or a page; the empty string is the anonymous sentinel and
 // must never reach a reader as an empty string.
 func Display(stored string) string {
+	return displayName(stored, namefilter.Rejects)
+}
+
+func displayName(stored string, rejects func(string) bool) string {
 	if stored == "" {
 		return AnonymousName
+	}
+	if rejects(stored) {
+		return MaskedName
 	}
 	return stored
 }
@@ -66,6 +80,7 @@ func Display(stored string) string {
 var reservedNormalized = map[string]bool{
 	"ADMIN": true, "MODERATOR": true, "SYSTEM": true, "ANONYMOUS": true, "NONAME": true, "NO NAME": true,
 	"CONTROLLER TESTER": true, "FIGHTER CT": true, "CT": true, "NULL": true, "UNDEFINED": true, "SUPPORT": true,
+	"NAME HIDDEN": true,
 }
 
 var platforms = map[string]bool{"ios": true, "mac": true, "windows": true, "android": true}
@@ -83,8 +98,9 @@ func Normalize(raw string) string {
 	return strings.Join(strings.FieldsFunc(strings.ToUpper(raw), unicode.IsSpace), " ")
 }
 
-// ValidateDisplayName ports CTUserIdentity.validateUsername: trimmed, 3 to 15
-// characters, letters, marks, digits and spaces only, not a reserved handle. It returns
+// ValidateDisplayName ports CTUserIdentity.validateUsername: trimmed, 3 to 20
+// characters, letters, marks, digits and spaces only, not a reserved handle or
+// rejected by the versioned ASCII name policy. It returns
 // the trimmed name and "" on success, otherwise the 422 reason.
 //
 // Length counts code points where the app counts grapheme clusters; the two agree for
@@ -99,13 +115,21 @@ func Normalize(raw string) string {
 // keyboard for Entry should just default the player back to NO NAME". The second half is
 // why rename uses it too: clearing the field is a way to go back to anonymous, not a 422.
 func ValidateOptionalDisplayName(raw string) (string, string) {
+	return validateOptionalDisplayName(raw, namefilter.Rejects)
+}
+
+func validateOptionalDisplayName(raw string, rejects func(string) bool) (string, string) {
 	if strings.TrimFunc(raw, isSwiftWhitespace) == "" {
 		return "", ""
 	}
-	return ValidateDisplayName(raw)
+	return validateDisplayName(raw, rejects)
 }
 
 func ValidateDisplayName(raw string) (string, string) {
+	return validateDisplayName(raw, namefilter.Rejects)
+}
+
+func validateDisplayName(raw string, rejects func(string) bool) (string, string) {
 	trimmed := strings.TrimFunc(raw, isSwiftWhitespace)
 	n := utf8.RuneCountInString(trimmed)
 	if n < minNameLen {
@@ -121,6 +145,9 @@ func ValidateDisplayName(raw string) (string, string) {
 	}
 	if reservedNormalized[Normalize(trimmed)] {
 		return "", "name_reserved"
+	}
+	if rejects(trimmed) {
+		return "", "name_inappropriate"
 	}
 	return trimmed, ""
 }

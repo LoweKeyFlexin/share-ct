@@ -45,6 +45,28 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+func TestLegacyNameMaskAndUnicodeAdmission(t *testing.T) {
+	rejects := func(name string) bool { return strings.EqualFold(name, "TEAPOT") }
+	if got := displayName("Teapot", rejects); got != MaskedName {
+		t.Errorf("legacy prohibited name is shown as %q, want %q", got, MaskedName)
+	}
+	if got := displayName("", rejects); got != AnonymousName {
+		t.Errorf("empty stored name is shown as %q", got)
+	}
+	if got := displayName("Aaron", rejects); got != "Aaron" {
+		t.Errorf("unaffected name is shown as %q", got)
+	}
+	if _, reason := validateDisplayName("CAFÉ", rejects); reason != "" {
+		t.Errorf("Unicode letter admission changed unexpectedly: %s", reason)
+	}
+	if _, reason := validateDisplayName("Teapot", rejects); reason != "name_inappropriate" {
+		t.Errorf("policy rejection reason = %q", reason)
+	}
+	if _, reason := validateDisplayName(MaskedName, rejects); reason != "name_reserved" {
+		t.Errorf("mask must not be claimable: %q", reason)
+	}
+}
+
 func TestValidPlatform(t *testing.T) {
 	for _, p := range []string{"ios", "mac", "windows", "android"} {
 		if !ValidPlatform(p) {

@@ -155,6 +155,37 @@ func TestCreateRejects(t *testing.T) {
 	}
 }
 
+func TestNamePolicyOnRegistrationAndRename(t *testing.T) {
+	hs := newHarness(t, stubScores{})
+	// A harmless test predicate proves both HTTP write paths use the policy. The
+	// digest matcher itself is tested with separate harmless vectors.
+	hs.m.rejectName = func(name string) bool { return strings.EqualFold(name, "TEAPOT") }
+	rec, out := hs.do("POST", "/v1/players", `{"display_name":"Teapot","platform":"ios"}`, "", "")
+	if rec.Code != 422 || out["error"] != "invalid" || out["reason"] != "name_inappropriate" {
+		t.Fatalf("register rejection: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(strings.ToLower(rec.Body.String()), "teapot") {
+		t.Error("rejection response echoed the name")
+	}
+	var count int
+	if err := hs.db.DB().QueryRow(`SELECT COUNT(*) FROM players`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected registration wrote a player: count=%d err=%v", count, err)
+	}
+	id, token := hs.register("Aaron", "")
+	rec, out = hs.do("PATCH", "/v1/players/"+id, `{"display_name":"teapot"}`, token, "")
+	if rec.Code != 422 || out["reason"] != "name_inappropriate" {
+		t.Fatalf("rename rejection: %d %s", rec.Code, rec.Body.String())
+	}
+	if p, err := hs.m.Store().Get(context.Background(), id); err != nil || p.DisplayName != "Aaron" {
+		t.Errorf("rejected rename changed stored name: %+v, %v", p, err)
+	}
+	// Empty/whitespace still intentionally clears back to the anonymous sentinel.
+	rec, out = hs.do("PATCH", "/v1/players/"+id, `{"display_name":"  "}`, token, "")
+	if rec.Code != 200 || out["display_name"] != AnonymousName {
+		t.Errorf("anonymous rename: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateRateLimitPerIP(t *testing.T) {
 	hs := newHarness(t, stubScores{})
 	for i := 0; i < RegistrationsPerIP; i++ {

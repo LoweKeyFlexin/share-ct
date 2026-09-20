@@ -122,8 +122,9 @@ player's id.
 
 The device mints nothing itself: it sends a display name and gets an opaque id and a
 bearer token back. Only `sha256(token)` is stored; a lost token means a new player.
-Display names follow the app's username rules: trimmed, 3–15 characters, letters, digits
-and spaces, reserved handles (`ADMIN`, `NO NAME`, `CT`, …) refused. Ten registrations a
+Display names follow the app's username rules: trimmed, 3–20 characters, letters, digits
+and spaces, reserved handles (`ADMIN`, `NO NAME`, `CT`, …) refused. Names matching the
+versioned ASCII content policy are also refused. Ten registrations a
 day per IP.
 
 ```sh
@@ -133,8 +134,32 @@ curl -sS -X POST https://ct.bond-haus.com/v1/players \
 # {"player_id":"6f1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b","token":"…43 chars…"}
 ```
 
-`reason` on 422: `name_too_short`, `name_too_long`, `name_invalid_characters`, `name_reserved`, `platform`
+`reason` on 422: `name_too_short`, `name_too_long`, `name_invalid_characters`, `name_reserved`,
+`name_inappropriate`, `platform`
 (`ios`, `mac`, `windows` or `android`).
+
+The content-policy refusal is the same on registration and rename:
+`422 {"error":"invalid","reason":"name_inappropriate"}`. It never echoes the
+submitted name. An empty or whitespace-only name is still accepted as anonymous.
+The embedded policy has format `CT-NAME-FILTER` v1, normalization
+`ASCII_UPPER_SPACE_V1`, and matching revision `ASCII_NAME_CANDIDATES_V2`; its
+SHA-256 is `6ab27f63e0e76f1ef1378de977c94913f312b21a646813a67e98ea4cf55ecde3`.
+The startup log prints this revision hash so an operator can identify the deployed
+policy. The digest asset contains no plaintext reviewed terms. It must be updated
+together with the app's `tools/name-filter/blocked-names-v1.sha256` and parity tests.
+
+The existing name validator continues to admit Unicode letters, marks and numbers.
+This first portable digest policy intentionally checks **ASCII names only**; it
+does not claim Unicode confusable coverage. A reviewed, separately versioned
+Unicode policy and cross-platform vectors are required before treating the
+online name filter as complete. Hashes of short terms are recoverable by guessing,
+so the digest asset provides obscurity from casual source inspection, not secrecy.
+
+When an older stored ASCII name newly matches the policy, reads of the board,
+recent feed and player profile display `NAME HIDDEN` while preserving that
+player's id, score, rank and stored name. The player can rename or clear the name
+through the existing authenticated PATCH route. The current app does not yet
+prompt such a player to rename; that notification is a release follow-up.
 
 ### Rename, erase, look up
 

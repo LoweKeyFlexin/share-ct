@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LoweKeyFlexin/share-ct/internal/namefilter"
 	"github.com/LoweKeyFlexin/share-ct/internal/server"
 	"github.com/LoweKeyFlexin/share-ct/internal/store"
 	"github.com/LoweKeyFlexin/share-ct/migrations"
@@ -92,7 +93,10 @@ func run(log *slog.Logger, listenAddr string) error {
 
 	log.Info("starting",
 		"version", version, "commit", commit, "go", runtime.Version(),
-		"database_path", dbPath, "listen_addr", listenAddr)
+		"database_path", dbPath, "listen_addr", listenAddr,
+		"name_policy_version", namefilter.Version,
+		"name_policy_normalization", namefilter.Normalization,
+		"name_policy_sha256", namefilter.AssetSHA256())
 
 	db, err := store.Open(ctx, dbPath)
 	if err != nil {
