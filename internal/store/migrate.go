@@ -3,12 +3,15 @@ package store
 import (
 	"cmp"
 	"context"
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"regexp"
 	"slices"
 	"strconv"
 	"time"
+
+	"github.com/LoweKeyFlexin/share-ct/internal/identity"
 )
 
 // Migration is one migrations/NNN_name.sql file.
@@ -126,11 +129,47 @@ func (s *Store) apply(ctx context.Context, m Migration) error {
 	if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
 		return err
 	}
+	if m.Version == 6 && m.Name == "player_refs_reports" {
+		if err := backfillPlayerRefs(ctx, tx); err != nil {
+			return fmt.Errorf("backfill player refs: %w", err)
+		}
+	}
 	const record = `INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`
 	if _, err := tx.ExecContext(ctx, record, m.Version, m.Name, time.Now().Unix()); err != nil {
 		return fmt.Errorf("record: %w", err)
 	}
 	return tx.Commit()
+}
+
+func backfillPlayerRefs(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM players WHERE player_ref IS NULL`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		ref, err := identity.NewRef()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE players SET player_ref = ? WHERE id = ?`, ref, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func maxVersion(applied map[int]bool) int {

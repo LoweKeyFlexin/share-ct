@@ -10,6 +10,7 @@ import (
 
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
 	"github.com/LoweKeyFlexin/share-ct/internal/leaderboard"
+	"github.com/LoweKeyFlexin/share-ct/internal/moderation"
 	"github.com/LoweKeyFlexin/share-ct/internal/players"
 	"github.com/LoweKeyFlexin/share-ct/internal/store"
 )
@@ -34,6 +35,7 @@ func New(log *slog.Logger, db *store.Store, now func() time.Time) http.Handler {
 	pl := players.New(log, db.DB(), now, scores)
 	pl.Register(mux)
 	leaderboard.New(log, scores, pl.RequireBearer, now).Register(mux)
+	moderation.New(log, db.DB(), now).Register(mux, pl.RequireBearer)
 
 	mux.HandleFunc("/", handleNotFound)
 	return recoverer(log, secureHeaders(requestLogger(log, mux)))

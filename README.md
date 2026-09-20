@@ -17,9 +17,11 @@ Ships in this order:
 
 ## What it stores
 
-A random per-device player id, the display name the player typed, scores with the
-attempt timings, the app version and device model. No email, no account, no ads, no
-tracking. Players can rename or erase their data from the app.
+A random per-device player id, a separate random public `player_ref`, the display name
+the player typed, scores with the attempt timings, the app version and device model.
+The draft reporting feature also stores a reporter, target, reason and review state.
+The private alert recipient is not stored in the database. No player email, account,
+ads or tracking. Players can rename or erase their data from the app.
 
 ## Status
 
@@ -44,7 +46,7 @@ Logs are JSON lines on stdout, one object per line. Every boot prints, in order:
 
 ```
 {"msg":"starting","version":"…","commit":"…","go":"go1.23.x","database_path":"/data/leaderboard.db","listen_addr":"0.0.0.0:8080"}
-{"msg":"migrations","applied":5,"from":0,"to":5}     ← applied is 0 on every later boot
+{"msg":"migrations","applied":6,"from":0,"to":6}     ← applied is 0 on every later boot
 {"msg":"listening","addr":"[::]:8080"}               ← Linux reports the 0.0.0.0 wildcard as the dual-stack [::]
 ```
 
@@ -115,7 +117,9 @@ player's id.
 | `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
 | `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased; `404` when the id is unknown, an already-erased player included, which the app treats as finished too |
 | `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
-| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
+| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_ref, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
+| `GET /v1/recent` | – | `200 {source:"recent", window:"all", entries:[...]}`; every entry also has `player_ref`. |
+| `POST /v1/reports` | bearer | `201 {report_id}` after a new report and its alert are committed; `202 {report_id}` for an identical earlier report. **Draft only: the review and mail adapter are not yet deployed.** |
 | anything else | – | `404 {"error":"not_found"}` |
 
 ### Register a player
@@ -231,3 +235,45 @@ a player whose best was set on a pad and who later played a worse trial on touch
 with the pad. Under `sort=score` the winning row is the highest-scoring one, so the label
 and time can differ between the two sorts. `device_label` is `""` when the submission
 carried none.
+
+### Draft player report API — release blocked
+
+Every board and recent row includes `player_ref`, 32 lowercase hex characters backed by
+128 cryptographically random bits. Migration 006 backfills old players inside its own
+transaction; a new registration mints a fresh ref. The ref stays the same when the player
+renames or submits scores. It is public, separate from both the bearer token and player id,
+and is never accepted as authentication. Erasing the player removes it.
+
+`POST /v1/reports` accepts exactly `{ "target_player_ref": "…", "reason": "spam" }`
+with `spam`, `harassment`, or `inappropriate` as the only reasons. A bearer token is
+required. Errors are `401 {"error":"unauthorized"}` for missing or invalid auth,
+`404 {"error":"not_found"}` for a well-formed ref whose player is gone,
+`422 {"error":"invalid","reason":"target_player_ref"|"reason"|"self_report"|"unknown_field"}`,
+`429 {"error":"rate_limited"}` with `Retry-After`, or `500 {"error":"internal"}`.
+There is no player-owned route on this endpoint, so `403` is not applicable. The client
+must claim success only on 201 or 202. A report never changes board visibility by itself.
+
+The reporter can create five distinct reports in a rolling 24 hours. An identical
+reporter/target/reason tuple is deduplicated for the lifetime of those players and
+returns the same ID, without a second alert. The rolling quota is stored in SQLite, so
+a restart cannot reset it. A report and its email outbox item commit together; a storage
+failure cannot yield 201. Both reporter and target have `ON DELETE CASCADE`, and the
+outbox cascades from the report, including after an attempted delivery. The dispatcher
+retries failed sends with backoff from one minute to one hour. A deleted report cannot be
+selected for retry. At-least-once delivery means a crash after provider acceptance may
+repeat the same report ID; the future email adapter should use that ID to deduplicate.
+
+**Deployment decisions still required:** Aaron chose private email, but Will's mail
+provider, credentials, private recipient, and secure review URL are not confirmed. The
+outbox exposes `moderation.AlertSender` and `DispatchDue`; no production adapter or
+background runner is wired, so this code does **not** send email. Configure the future
+adapter via deployment secrets, never repo files or request logs. The email should carry
+only report ID, reason, target public ref, and a secure review link. Proposed storm
+policy: preserve all accepted reports in SQLite, send at most ten alert emails per hour,
+and digest additional pending IDs hourly. This policy needs implementation and Aaron's
+approval before release. A separate authenticated operator workflow must show the queue,
+let Aaron dismiss or uphold reports, globally suppress an upheld target's public rows,
+record the decision, and allow reversal. No operator action belongs in the public player
+API. Until that workflow, the mail adapter, privacy-policy/App Store disclosure review,
+and Will's exact local read-only compose test are complete, keep this PR draft and do not
+merge it to `main` (which publishes the image).
