@@ -19,6 +19,13 @@ func fixturePolicy(t *testing.T) policy {
 		header,
 		line("whole", "BLUE MOON"),
 		line("token", "TEAPOT"),
+		line("token", "IOTA"),
+		line("token", "LILY"),
+		// Harmless stand-ins for the generator's offline I/L-to-1 variants.
+		line("token", "1ILY"),
+		line("token", "L1LY"),
+		line("token", "11LY"),
+		line("token", "BO1ST"),
 		line("substring", "QUASAR"),
 	}, "\n") + "\n"
 	p, err := parse(data)
@@ -42,6 +49,7 @@ func TestMatchingModesAndEvasions(t *testing.T) {
 	p := fixturePolicy(t)
 	for _, raw := range []string{
 		"blue moon", " TEAPOT ", "a teapot", "t e a p o t", "tea p0t",
+		"1ily", "l1ly", "11ly", "1 1 l y", "8O157",
 		"superquasarx", "qu4sar", "q u a s a r",
 	} {
 		if !p.rejects(raw) {
@@ -50,7 +58,7 @@ func TestMatchingModesAndEvasions(t *testing.T) {
 	}
 	for _, raw := range []string{
 		"blue moonlight", "teapottery", "supernova", "QUAD", "BUTTER", "BUTTON",
-		"CAFÉ", "   ",
+		"1OTA", "CAFÉ", "   ",
 	} {
 		if p.rejects(raw) {
 			t.Errorf("should allow harmless fixture %q", raw)
@@ -59,10 +67,10 @@ func TestMatchingModesAndEvasions(t *testing.T) {
 }
 
 func TestEmbeddedPolicyAndMalformedAsset(t *testing.T) {
-	if got := AssetSHA256(); got != "4caa3ff77149002da8f102b1fae5fe4d7bf90f3fb40e04846460a2f1c0f4dd72" {
+	if got := AssetSHA256(); got != "847845bbcd6cd4044d85021573d192a648d05b489fba783e95312aacfe2f0b5a" {
 		t.Errorf("asset revision changed to %s; compare with app manifest", got)
 	}
-	if len(active.whole) != 32 || len(active.token) != 406 || len(active.substring) != 25 {
+	if len(active.whole) != 165 || len(active.token) != 760 || len(active.substring) != 43 {
 		t.Errorf("unexpected embedded policy counts: whole=%d token=%d substring=%d",
 			len(active.whole), len(active.token), len(active.substring))
 	}

@@ -129,12 +129,12 @@ func (p policy) rejects(raw string) bool {
 	if compact != normalized && p.rejectsCandidate(compact) {
 		return true
 	}
-	folded := foldDigits(normalized)
+	folded := foldOtherDigits(normalized)
 	if folded != normalized && p.rejectsCandidate(folded) {
 		return true
 	}
 	if compact != normalized {
-		foldedCompact := foldDigits(compact)
+		foldedCompact := foldOtherDigits(compact)
 		if foldedCompact != compact && p.rejectsCandidate(foldedCompact) {
 			return true
 		}
@@ -165,14 +165,15 @@ func normalizeASCII(raw string) (string, bool) {
 	return string(out), len(out) > 0
 }
 
-func foldDigits(input string) string {
+// The reviewed policy asset includes every bounded I/L-to-1 variant. Leaving
+// literal 1 intact at runtime lets one name mix the two substitutions without
+// a combinatorial number of hashes per request.
+func foldOtherDigits(input string) string {
 	out := []byte(input)
 	for i, c := range out {
 		switch c {
 		case '0':
 			out[i] = 'O'
-		case '1':
-			out[i] = 'I'
 		case '3':
 			out[i] = 'E'
 		case '4':
