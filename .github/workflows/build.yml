@@ -266,7 +266,12 @@ jobs:
           grep -q '"msg":"shutting down"' second-boot.log
           grep -q '"msg":"stopped"' second-boot.log
           [ "$(grep -c '"msg":"migrations"' second-boot.log)" = 2 ]
-          grep -q '"msg":"migrations","applied":0,"from":5,"to":5' second-boot.log
+          # Derived, same as the first-boot assertion above — this is the SECOND copy of
+          # the hardcoded count and it failed the very next build after that one was
+          # fixed, because grepping for one number found the other. A count that appears
+          # twice will go stale twice.
+          want=$(ls migrations/*.sql | wc -l | tr -d ' ')
+          grep -q "\"msg\":\"migrations\",\"applied\":0,\"from\":$want,\"to\":$want" second-boot.log
           [ "$(curl -fsS localhost:8080/healthz)" = ok ]
           [ "$(curl -fsS 'localhost:8080/v1/board?source=touch' | jq -r '.entries[0].score')" = 2100 ]
 
