@@ -18,6 +18,7 @@ import (
 const (
 	ReportsPerDay = 5
 	reportWindow  = 24 * time.Hour
+	dedupWindow   = 24 * time.Hour
 )
 
 var (
@@ -43,8 +44,8 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 	return &Store{db: db, now: now}
 }
 
-// Accept commits a report and its alert together. An identical report from the same
-// player is idempotent for life: it returns the original ID without another alert.
+// Accept commits a report and its alert together. A repeated pending report from the
+// same player in 24 hours is idempotent. A closed or older case starts a new report.
 func (s *Store) Accept(ctx context.Context, reporterID, targetRef, reason string) (id string, created bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -62,14 +63,17 @@ func (s *Store) Accept(ctx context.Context, reporterID, targetRef, reason string
 	if targetID == reporterID {
 		return "", false, ErrSelfReport
 	}
-	err = tx.QueryRowContext(ctx, `SELECT id FROM reports WHERE reporter_id = ? AND target_id = ? AND reason = ?`, reporterID, targetID, reason).Scan(&id)
+	now := s.now().Unix()
+	err = tx.QueryRowContext(ctx, `SELECT id FROM reports
+		WHERE reporter_id = ? AND target_id = ? AND reason = ?
+		AND state = 'pending' AND created_at > ?
+		ORDER BY created_at DESC, id DESC LIMIT 1`, reporterID, targetID, reason, now-int64(dedupWindow.Seconds())).Scan(&id)
 	if err == nil {
 		return id, false, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
 	}
-	now := s.now().Unix()
 	var count int
 	var oldest sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `SELECT count(*), min(created_at) FROM reports WHERE reporter_id = ? AND created_at > ?`, reporterID, now-int64(reportWindow.Seconds())).Scan(&count, &oldest); err != nil {

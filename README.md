@@ -254,26 +254,36 @@ There is no player-owned route on this endpoint, so `403` is not applicable. The
 must claim success only on 201 or 202. A report never changes board visibility by itself.
 
 The reporter can create five distinct reports in a rolling 24 hours. An identical
-reporter/target/reason tuple is deduplicated for the lifetime of those players and
-returns the same ID, without a second alert. The rolling quota is stored in SQLite, so
-a restart cannot reset it. A report and its email outbox item commit together; a storage
-failure cannot yield 201. Both reporter and target have `ON DELETE CASCADE`, and the
-outbox cascades from the report, including after an attempted delivery. The dispatcher
-retries failed sends with backoff from one minute to one hour. A deleted report cannot be
-selected for retry. At-least-once delivery means a crash after provider acceptance may
-repeat the same report ID; the future email adapter should use that ID to deduplicate.
+reporter/target/reason tuple returns the same ID only while the newest case is pending
+and less than 24 hours old. A dismissed or upheld case can be reported again immediately;
+an older pending case can be reported again after the window. A new case gets a new alert.
+The rolling quota is stored in SQLite, so a restart cannot reset it. A report and its
+email outbox item commit together; a storage failure cannot yield 201. Both reporter
+and target have `ON DELETE CASCADE`, and the outbox cascades from the report, including
+after an attempted delivery.
+
+The dispatcher commits a short claim with a 30-second lease before calling the provider,
+then sends only the opaque report ID under a 10-second context deadline. The provider
+adapter must honor cancellation and set its own network timeout. Failed sends retry with
+backoff from one minute to one hour. Erasing either player removes the report and its
+outbox item, including an in-flight claim, so completion cannot recreate a retryable
+alert. An already-started email cannot be recalled and may arrive after erasure begins;
+its ID-only link would then resolve to a missing report. A crash after provider acceptance
+may also repeat the same ID. The future email adapter should deduplicate by that ID.
 
 **Deployment decisions still required:** Aaron chose private email, but Will's mail
-provider, credentials, private recipient, and secure review URL are not confirmed. The
+provider, credentials, private recipient address, and secure review URL are not confirmed. The
 outbox exposes `moderation.AlertSender` and `DispatchDue`; no production adapter or
 background runner is wired, so this code does **not** send email. Configure the future
-adapter via deployment secrets, never repo files or request logs. The email should carry
-only report ID, reason, target public ref, and a secure review link. Proposed storm
+adapter via private deployment secrets, never repo files or request logs. The email should
+carry only the report ID and a link to an authenticated review interface; the reason,
+target ref, name, and reporter details stay behind that interface. Proposed storm
 policy: preserve all accepted reports in SQLite, send at most ten alert emails per hour,
 and digest additional pending IDs hourly. This policy needs implementation and Aaron's
-approval before release. A separate authenticated operator workflow must show the queue,
-let Aaron dismiss or uphold reports, globally suppress an upheld target's public rows,
-record the decision, and allow reversal. No operator action belongs in the public player
-API. Until that workflow, the mail adapter, privacy-policy/App Store disclosure review,
-and Will's exact local read-only compose test are complete, keep this PR draft and do not
-merge it to `main` (which publishes the image).
+approval before release. Aaron is the proposed review owner: the alert must lead him to a
+separate authenticated queue where he can read the case, dismiss or uphold it, globally
+suppress an upheld target's public rows, record the decision, and reverse it. Will must
+confirm the private recipient and support/response arrangement with Aaron at deployment.
+No operator action belongs in the public player API. Until that workflow, the mail adapter,
+privacy-policy/App Store disclosure review, and Will's exact local read-only compose test
+are complete, keep this PR draft and do not merge it to `main` (which publishes the image).

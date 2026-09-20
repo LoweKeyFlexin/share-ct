@@ -3,6 +3,7 @@ package moderation_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,9 +170,151 @@ func TestDurableQuotaAfterRestart(t *testing.T) {
 	}
 }
 
+func TestDedupExpiresAndClosedCaseCanBeReportedAgain(t *testing.T) {
+	f := makeFixture(t)
+	_, token := f.player()
+	target, _ := f.player()
+	body := reportBody(target.Ref, "harassment")
+	first, old := f.post(body, token)
+	if first.Code != 201 {
+		t.Fatalf("first report: %d", first.Code)
+	}
+	if _, err := f.db.DB().Exec(`UPDATE reports SET state = 'dismissed' WHERE id = ?`, old["report_id"]); err != nil {
+		t.Fatal(err)
+	}
+	second, fresh := f.post(body, token)
+	if second.Code != 201 || fresh["report_id"] == old["report_id"] {
+		t.Fatalf("closed case reused: %d %v", second.Code, fresh)
+	}
+	if duplicate, same := f.post(body, token); duplicate.Code != 202 || same["report_id"] != fresh["report_id"] {
+		t.Fatalf("pending case did not deduplicate: %d %v", duplicate.Code, same)
+	}
+	f.clock = f.clock.Add(24*time.Hour + time.Second)
+	third, later := f.post(body, token)
+	if third.Code != 201 || later["report_id"] == fresh["report_id"] {
+		t.Fatalf("older incident reused: %d %v", third.Code, later)
+	}
+	if count(t, f.db, "reports") != 3 || count(t, f.db, "report_alert_outbox") != 3 {
+		t.Fatal("new incident did not enqueue a new alert")
+	}
+}
+
 type sender struct {
 	calls []moderation.Alert
 	fail  bool
+}
+
+type heldSender struct {
+	entered  chan moderation.Alert
+	release  chan struct{}
+	deadline chan time.Time
+}
+
+func (s *heldSender) Send(ctx context.Context, a moderation.Alert) error {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return fmt.Errorf("provider context has no deadline")
+	}
+	s.deadline <- deadline
+	s.entered <- a
+	select {
+	case <-s.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// The provider may complete an already-started ID-only email after the target is
+// erased. The claim is committed before Send, so erasure must finish while Send is
+// held, and finishing that send must not recreate the deleted report or outbox item.
+func TestEraseRacesWithInFlightAlertWithoutResurrection(t *testing.T) {
+	f := makeFixture(t)
+	_, token := f.player()
+	target, _ := f.player()
+	rec, out := f.post(reportBody(target.Ref, "spam"), token)
+	if rec.Code != 201 {
+		t.Fatal(rec.Code)
+	}
+	s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
+	mail := &heldSender{entered: make(chan moderation.Alert, 1), release: make(chan struct{}), deadline: make(chan time.Time, 1)}
+	released := false
+	defer func() {
+		if !released {
+			close(mail.release)
+		}
+	}()
+	type result struct {
+		attempted bool
+		err       error
+	}
+	done := make(chan result, 1)
+	go func() { attempted, err := s.DispatchDue(context.Background(), mail); done <- result{attempted, err} }()
+	select {
+	case alert := <-mail.entered:
+		if alert.ReportID != out["report_id"] {
+			t.Fatalf("wrong alert: %+v", alert)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("send never started")
+	}
+	deadline := <-mail.deadline
+	if left := time.Until(deadline); left <= 0 || left > 10*time.Second {
+		t.Fatalf("provider deadline is not bounded to ten seconds: %v", left)
+	}
+	eraseCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := players.NewStore(f.db.DB(), nil).Delete(eraseCtx, target.ID); err != nil {
+		t.Fatalf("erase blocked by provider call: %v", err)
+	}
+	if count(t, f.db, "reports") != 0 || count(t, f.db, "report_alert_outbox") != 0 {
+		t.Fatal("erase left report or alert while provider is in flight")
+	}
+	close(mail.release)
+	released = true
+	select {
+	case result := <-done:
+		if !result.attempted || result.err != nil {
+			t.Fatalf("dispatch finish: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatch did not finish")
+	}
+	if count(t, f.db, "reports") != 0 || count(t, f.db, "report_alert_outbox") != 0 {
+		t.Fatal("send completion resurrected deleted data")
+	}
+	f.clock = f.clock.Add(time.Minute)
+	if attempted, err := s.DispatchDue(context.Background(), &sender{}); attempted || err != nil {
+		t.Fatalf("deleted report is retryable: %v %v", attempted, err)
+	}
+}
+
+func TestDispatchHonorsProviderDeadlineAndReleasesLease(t *testing.T) {
+	f := makeFixture(t)
+	_, token := f.player()
+	target, _ := f.player()
+	if rec, _ := f.post(reportBody(target.Ref, "spam"), token); rec.Code != 201 {
+		t.Fatal(rec.Code)
+	}
+	s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
+	mail := &heldSender{entered: make(chan moderation.Alert, 1), release: make(chan struct{}), deadline: make(chan time.Time, 1)}
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	attempted, err := s.DispatchDue(ctx, mail)
+	if !attempted || err != moderation.ErrDelivery {
+		t.Fatalf("timed send = %v %v", attempted, err)
+	}
+	if len(mail.entered) != 1 || len(mail.deadline) != 1 {
+		t.Fatal("sender did not receive bounded context")
+	}
+	var attempts, leaseUntil int
+	var leaseToken sql.NullString
+	if err := f.db.DB().QueryRow(`SELECT attempts, lease_token, lease_until FROM report_alert_outbox`).Scan(&attempts, &leaseToken, &leaseUntil); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 || leaseToken.Valid || leaseUntil != 0 {
+		t.Fatalf("canceled send stranded lease: attempts=%d token=%v until=%d", attempts, leaseToken, leaseUntil)
+	}
 }
 
 func (s *sender) Send(_ context.Context, a moderation.Alert) error {
@@ -195,7 +338,7 @@ func TestOutboxRetryAndErasureFromEitherSide(t *testing.T) {
 			s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
 			mail := &sender{fail: true}
 			attempted, err := s.DispatchDue(context.Background(), mail)
-			if !attempted || err == nil || len(mail.calls) != 1 || mail.calls[0].TargetPlayerRef != target.Ref {
+			if !attempted || err == nil || len(mail.calls) != 1 || !identity.ValidRef(mail.calls[0].ReportID) {
 				t.Fatalf("failed send = %v %v %+v", attempted, err, mail.calls)
 			}
 			if attempted, err := s.DispatchDue(context.Background(), mail); attempted || err != nil {
