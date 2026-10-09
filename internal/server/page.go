@@ -153,13 +153,19 @@ const boardScript = `(function () {
     head.appendChild(el('span', 'rk', feed ? '·' : String(e.rank)));
 
     var who = el('div', 'who');
-    who.appendChild(el('b', null, e.display_name));
+    var identity = el('div', 'player-identity');
+    identity.appendChild(el('b', null, e.display_name));
+    var playerID = el('span', 'player-id');
+    if (e.player_short) playerID.appendChild(el('span', null, '· ' + e.player_short));
+    var origin = platformInfo(e.platform);
+    if (origin.icon) playerID.appendChild(platformGlyph(origin));
+    identity.appendChild(playerID);
+    who.appendChild(identity);
     var platform = platformInfo(e.platform);
     var subline = el('small', 'device-subline');
     var date = when(e.created_at);
     if (date) subline.appendChild(el('span', 'entry-date', date + ' ·'));
     var device = el('span', 'device-identity');
-    if (platform.icon) device.appendChild(platformGlyph(platform));
     device.appendChild(el('span', 'device-label', e.device_label || ''));
     subline.appendChild(device);
     who.appendChild(subline);
@@ -278,7 +284,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".11"
+const pageVersion = ".12"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -325,6 +331,9 @@ const indexHead = `<!doctype html>
   .row:hover { border-color:var(--line2); }
   .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { flex:1 1 auto; min-width:0; }
+  .player-identity { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  .player-id { display:inline-flex; align-items:center; gap:4px; font: .65rem var(--mono); color:var(--mute); }
+  .player-id .platform-glyph { width:10px; height:10px; flex-basis:10px; }
   .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
   .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
                white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
