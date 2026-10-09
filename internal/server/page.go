@@ -156,10 +156,12 @@ const boardScript = `(function () {
     who.appendChild(el('b', null, e.display_name));
     var platform = platformInfo(e.platform);
     var subline = el('small', 'device-subline');
-    if (platform.icon) subline.appendChild(platformGlyph(platform));
-    else subline.appendChild(el('span', 'platform-name', platform.label));
-    subline.appendChild(el('span', null,
-      [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
+    var date = when(e.created_at);
+    if (date) subline.appendChild(el('span', 'entry-date', date + ' ·'));
+    var device = el('span', 'device-identity');
+    if (platform.icon) device.appendChild(platformGlyph(platform));
+    device.appendChild(el('span', 'device-label', e.device_label || ''));
+    subline.appendChild(device);
     who.appendChild(subline);
     head.appendChild(who);
 
@@ -200,7 +202,6 @@ const boardScript = `(function () {
       dl.appendChild(runs);
     }
     def(dl, 'input', e.device_label);
-    def(dl, 'platform', platform.label);
     def(dl, 'set', when(e.created_at));
     def(dl, 'player', e.player_short);
     row.appendChild(dl);
@@ -277,7 +278,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".10"
+const pageVersion = ".11"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -336,8 +337,9 @@ const indexHead = `<!doctype html>
   .chev { color:var(--mute); font-size:1rem; transition:transform .15s ease; flex:0 0 auto; }
   .platform-glyph { width:13px; height:13px; flex:0 0 13px; color:var(--dim); }
   .who .device-subline { display:flex; align-items:center; gap:5px; }
-  .device-subline > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-  .platform-name { flex-shrink:0; }
+  .device-identity { display:inline-flex; align-items:center; gap:5px; min-width:0; }
+  .device-label { overflow:hidden; text-overflow:ellipsis; }
+  .entry-date { flex-shrink:0; }
   .row[open] .chev { transform:rotate(90deg); }
 
   /* Top three wear the app's medals, and --headline lifts that metal onto the number the
