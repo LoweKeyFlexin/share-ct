@@ -73,8 +73,10 @@ func TestIndexPage(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
+	// The SVG namespace identifies inline vector elements; it is not a fetched asset.
+	selfContainedBody := strings.ReplaceAll(body, "http://www.w3.org/2000/svg", "")
 	for _, banned := range []string{"http://", "https://", " src=", "href=", "innerHTML"} {
-		if strings.Contains(body, banned) {
+		if strings.Contains(selfContainedBody, banned) {
 			t.Errorf("page must be self-contained and build rows from text: found %q", banned)
 		}
 	}
