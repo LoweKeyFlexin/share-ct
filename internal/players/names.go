@@ -44,24 +44,14 @@ const (
 // (minNameLen is 3), and the word itself stays reserved so it cannot be claimed either.
 const AnonymousName = "NO NAME"
 
-// MaskedName is shown for a legacy display name that the current policy would
-// refuse. The owner and their scores remain unchanged; only public reads are
-// masked until the player chooses another name.
-const MaskedName = "NAME HIDDEN"
-
 // Display is the stored display name as a reader should see it. Apply it at EVERY point
 // a stored name reaches JSON or a page; the empty string is the anonymous sentinel and
 // must never reach a reader as an empty string.
+// Stored names are never masked by the name policy: it refuses new and renamed names only
+// (2026-10-12 scope; hiding an existing name is a deferred review action).
 func Display(stored string) string {
-	return displayName(stored, namefilter.Rejects)
-}
-
-func displayName(stored string, rejects func(string) bool) string {
 	if stored == "" {
 		return AnonymousName
-	}
-	if rejects(stored) {
-		return MaskedName
 	}
 	return stored
 }

@@ -163,11 +163,8 @@ Unicode policy and cross-platform vectors are required before treating the
 online name filter as complete. Hashes of short terms are recoverable by guessing,
 so the digest asset provides obscurity from casual source inspection, not secrecy.
 
-When an older stored ASCII name newly matches the policy, reads of the board,
-recent feed and player profile display `NAME HIDDEN` while preserving that
-player's id, score, rank and stored name. The player can rename or clear the name
-through the existing authenticated PATCH route. The current app does not yet
-prompt such a player to rename; that notification is a release follow-up.
+The policy gates registration and rename only; a name stored before it is shown
+unchanged (hiding an existing name is a deferred review action).
 
 ### Rename, erase, look up
 

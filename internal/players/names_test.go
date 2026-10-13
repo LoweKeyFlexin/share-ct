@@ -45,16 +45,14 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-func TestLegacyNameMaskAndUnicodeAdmission(t *testing.T) {
+func TestPolicyRefusesWithoutMaskingStoredNames(t *testing.T) {
 	rejects := func(name string) bool { return strings.EqualFold(name, "TEAPOT") }
-	if got := displayName("Teapot", rejects); got != MaskedName {
-		t.Errorf("legacy prohibited name is shown as %q, want %q", got, MaskedName)
+	// An existing stored name is shown as stored: the policy gates writes only.
+	if got := Display("Teapot"); got != "Teapot" {
+		t.Errorf("stored name is shown as %q, want it unmasked", got)
 	}
-	if got := displayName("", rejects); got != AnonymousName {
+	if got := Display(""); got != AnonymousName {
 		t.Errorf("empty stored name is shown as %q", got)
-	}
-	if got := displayName("Aaron", rejects); got != "Aaron" {
-		t.Errorf("unaffected name is shown as %q", got)
 	}
 	if _, reason := validateDisplayName("CAFÉ", rejects); reason != "" {
 		t.Errorf("Unicode letter admission changed unexpectedly: %s", reason)
@@ -62,8 +60,8 @@ func TestLegacyNameMaskAndUnicodeAdmission(t *testing.T) {
 	if _, reason := validateDisplayName("Teapot", rejects); reason != "name_inappropriate" {
 		t.Errorf("policy rejection reason = %q", reason)
 	}
-	if _, reason := validateDisplayName(MaskedName, rejects); reason != "name_reserved" {
-		t.Errorf("mask must not be claimable: %q", reason)
+	if _, reason := validateDisplayName("NAME HIDDEN", rejects); reason != "name_reserved" {
+		t.Errorf("app-reserved handle must stay reserved: %q", reason)
 	}
 }
 
