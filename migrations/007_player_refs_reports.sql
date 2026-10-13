@@ -22,15 +22,3 @@ CREATE INDEX ix_reports_reporter_time ON reports(reporter_id, created_at);
 CREATE INDEX ix_reports_target ON reports(target_id);
 CREATE INDEX ix_reports_dedup_pending ON reports(reporter_id, target_id, reason, created_at DESC)
     WHERE state = 'pending';
-
--- No address, report body, bearer, or copied player reference is retained here.
--- Both FKs above cascade to reports, which in turn cascades to this outbox.
-CREATE TABLE report_alert_outbox (
-    report_id       TEXT PRIMARY KEY REFERENCES reports(id) ON DELETE CASCADE,
-    attempts        INTEGER NOT NULL DEFAULT 0,
-    next_attempt_at INTEGER NOT NULL,
-    lease_token     TEXT,
-    lease_until     INTEGER NOT NULL DEFAULT 0,
-    sent_at         INTEGER
-);
-CREATE INDEX ix_report_alert_due ON report_alert_outbox(next_attempt_at) WHERE sent_at IS NULL;

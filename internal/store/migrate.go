@@ -129,7 +129,7 @@ func (s *Store) apply(ctx context.Context, m Migration) error {
 	if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
 		return err
 	}
-	if m.Version == 6 && m.Name == "player_refs_reports" {
+	if m.Version == 7 && m.Name == "player_refs_reports" {
 		if err := backfillPlayerRefs(ctx, tx); err != nil {
 			return fmt.Errorf("backfill player refs: %w", err)
 		}

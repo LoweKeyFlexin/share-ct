@@ -3,7 +3,6 @@ package moderation_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -121,22 +120,22 @@ func TestReportHTTPValidationCommitAndSafeLogs(t *testing.T) {
 	if rec2.Code != 202 || out2["report_id"] != out["report_id"] {
 		t.Fatalf("dedup = %d %v", rec2.Code, out2)
 	}
-	if count(t, f.db, "reports") != 1 || count(t, f.db, "report_alert_outbox") != 1 {
-		t.Fatal("report/outbox not atomic or deduped")
+	if count(t, f.db, "reports") != 1 {
+		t.Fatal("report not deduped")
 	}
 	for _, secret := range []string{token, good, target.Ref, reporter.ID} {
 		if strings.Contains(f.log.String(), secret) {
 			t.Fatalf("log contains sensitive value %q", secret)
 		}
 	}
-	// A failed outbox insertion must roll the report back and never answer accepted.
-	if _, err := f.db.DB().Exec(`CREATE TRIGGER fail_alert BEFORE INSERT ON report_alert_outbox BEGIN SELECT RAISE(ABORT, 'outbox unavailable'); END`); err != nil {
+	// A failed report insertion must never answer accepted.
+	if _, err := f.db.DB().Exec(`CREATE TRIGGER fail_report BEFORE INSERT ON reports BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`); err != nil {
 		t.Fatal(err)
 	}
 	other, _ := f.player()
 	rec, _ = f.post(reportBody(other.Ref, "spam"), token)
 	if rec.Code != 500 || count(t, f.db, "reports") != 1 {
-		t.Fatalf("outbox failure accepted report: %d", rec.Code)
+		t.Fatalf("storage failure accepted report: %d", rec.Code)
 	}
 }
 
@@ -194,159 +193,20 @@ func TestDedupExpiresAndClosedCaseCanBeReportedAgain(t *testing.T) {
 	if third.Code != 201 || later["report_id"] == fresh["report_id"] {
 		t.Fatalf("older incident reused: %d %v", third.Code, later)
 	}
-	if count(t, f.db, "reports") != 3 || count(t, f.db, "report_alert_outbox") != 3 {
-		t.Fatal("new incident did not enqueue a new alert")
+	if count(t, f.db, "reports") != 3 {
+		t.Fatal("new incident did not store a new report")
 	}
 }
 
-type sender struct {
-	calls []moderation.Alert
-	fail  bool
-}
-
-type heldSender struct {
-	entered  chan moderation.Alert
-	release  chan struct{}
-	deadline chan time.Time
-}
-
-func (s *heldSender) Send(ctx context.Context, a moderation.Alert) error {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return fmt.Errorf("provider context has no deadline")
-	}
-	s.deadline <- deadline
-	s.entered <- a
-	select {
-	case <-s.release:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// The provider may complete an already-started ID-only email after the target is
-// erased. The claim is committed before Send, so erasure must finish while Send is
-// held, and finishing that send must not recreate the deleted report or outbox item.
-func TestEraseRacesWithInFlightAlertWithoutResurrection(t *testing.T) {
-	f := makeFixture(t)
-	_, token := f.player()
-	target, _ := f.player()
-	rec, out := f.post(reportBody(target.Ref, "spam"), token)
-	if rec.Code != 201 {
-		t.Fatal(rec.Code)
-	}
-	s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
-	mail := &heldSender{entered: make(chan moderation.Alert, 1), release: make(chan struct{}), deadline: make(chan time.Time, 1)}
-	released := false
-	defer func() {
-		if !released {
-			close(mail.release)
-		}
-	}()
-	type result struct {
-		attempted bool
-		err       error
-	}
-	done := make(chan result, 1)
-	go func() { attempted, err := s.DispatchDue(context.Background(), mail); done <- result{attempted, err} }()
-	select {
-	case alert := <-mail.entered:
-		if alert.ReportID != out["report_id"] {
-			t.Fatalf("wrong alert: %+v", alert)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("send never started")
-	}
-	deadline := <-mail.deadline
-	if left := time.Until(deadline); left <= 0 || left > 10*time.Second {
-		t.Fatalf("provider deadline is not bounded to ten seconds: %v", left)
-	}
-	eraseCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := players.NewStore(f.db.DB(), nil).Delete(eraseCtx, target.ID); err != nil {
-		t.Fatalf("erase blocked by provider call: %v", err)
-	}
-	if count(t, f.db, "reports") != 0 || count(t, f.db, "report_alert_outbox") != 0 {
-		t.Fatal("erase left report or alert while provider is in flight")
-	}
-	close(mail.release)
-	released = true
-	select {
-	case result := <-done:
-		if !result.attempted || result.err != nil {
-			t.Fatalf("dispatch finish: %+v", result)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("dispatch did not finish")
-	}
-	if count(t, f.db, "reports") != 0 || count(t, f.db, "report_alert_outbox") != 0 {
-		t.Fatal("send completion resurrected deleted data")
-	}
-	f.clock = f.clock.Add(time.Minute)
-	if attempted, err := s.DispatchDue(context.Background(), &sender{}); attempted || err != nil {
-		t.Fatalf("deleted report is retryable: %v %v", attempted, err)
-	}
-}
-
-func TestDispatchHonorsProviderDeadlineAndReleasesLease(t *testing.T) {
-	f := makeFixture(t)
-	_, token := f.player()
-	target, _ := f.player()
-	if rec, _ := f.post(reportBody(target.Ref, "spam"), token); rec.Code != 201 {
-		t.Fatal(rec.Code)
-	}
-	s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
-	mail := &heldSender{entered: make(chan moderation.Alert, 1), release: make(chan struct{}), deadline: make(chan time.Time, 1)}
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	attempted, err := s.DispatchDue(ctx, mail)
-	if !attempted || err != moderation.ErrDelivery {
-		t.Fatalf("timed send = %v %v", attempted, err)
-	}
-	if len(mail.entered) != 1 || len(mail.deadline) != 1 {
-		t.Fatal("sender did not receive bounded context")
-	}
-	var attempts, leaseUntil int
-	var leaseToken sql.NullString
-	if err := f.db.DB().QueryRow(`SELECT attempts, lease_token, lease_until FROM report_alert_outbox`).Scan(&attempts, &leaseToken, &leaseUntil); err != nil {
-		t.Fatal(err)
-	}
-	if attempts != 1 || leaseToken.Valid || leaseUntil != 0 {
-		t.Fatalf("canceled send stranded lease: attempts=%d token=%v until=%d", attempts, leaseToken, leaseUntil)
-	}
-}
-
-func (s *sender) Send(_ context.Context, a moderation.Alert) error {
-	s.calls = append(s.calls, a)
-	if s.fail {
-		return fmt.Errorf("provider failed")
-	}
-	return nil
-}
-
-func TestOutboxRetryAndErasureFromEitherSide(t *testing.T) {
+// Erasing either player removes every report involving them (README: deletion covers reports).
+func TestErasureFromEitherSideRemovesReports(t *testing.T) {
 	for _, erase := range []string{"reporter", "target"} {
 		t.Run(erase, func(t *testing.T) {
 			f := makeFixture(t)
 			reporter, token := f.player()
 			target, _ := f.player()
-			body := reportBody(target.Ref, "harassment")
-			if rec, _ := f.post(body, token); rec.Code != 201 {
+			if rec, _ := f.post(reportBody(target.Ref, "harassment"), token); rec.Code != 201 {
 				t.Fatal(rec.Code)
-			}
-			s := moderation.NewStore(f.db.DB(), func() time.Time { return f.clock })
-			mail := &sender{fail: true}
-			attempted, err := s.DispatchDue(context.Background(), mail)
-			if !attempted || err == nil || len(mail.calls) != 1 || !identity.ValidRef(mail.calls[0].ReportID) {
-				t.Fatalf("failed send = %v %v %+v", attempted, err, mail.calls)
-			}
-			if attempted, err := s.DispatchDue(context.Background(), mail); attempted || err != nil {
-				t.Fatalf("retry too early = %v %v", attempted, err)
-			}
-			var attempts int
-			if err := f.db.DB().QueryRow(`SELECT attempts FROM report_alert_outbox`).Scan(&attempts); err != nil || attempts != 1 {
-				t.Fatalf("retry not durable: %d %v", attempts, err)
 			}
 			victim := reporter.ID
 			if erase == "target" {
@@ -355,70 +215,10 @@ func TestOutboxRetryAndErasureFromEitherSide(t *testing.T) {
 			if err := players.NewStore(f.db.DB(), nil).Delete(context.Background(), victim); err != nil {
 				t.Fatal(err)
 			}
-			if count(t, f.db, "reports") != 0 || count(t, f.db, "report_alert_outbox") != 0 {
-				t.Fatal("erase left report or alert")
-			}
-			f.clock = f.clock.Add(2 * time.Minute)
-			mail.fail = false
-			if attempted, err := s.DispatchDue(context.Background(), mail); attempted || err != nil || len(mail.calls) != 1 {
-				t.Fatalf("erased report retried: %v %v %+v", attempted, err, mail.calls)
+			if count(t, f.db, "reports") != 0 {
+				t.Fatal("erase left a report")
 			}
 		})
-	}
-}
-
-func TestOutboxRetrySurvivesDatabaseReopen(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "persist.db")
-	db, err := store.Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Migrate(ctx, migrations.FS); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Unix(1_800_000_000, 0)
-	pl := players.NewStore(db.DB(), func() time.Time { return now })
-	reporter, _, err := pl.Create(ctx, "Reporter", "ios")
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, _, err := pl.Create(ctx, "Target", "ios")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := moderation.NewStore(db.DB(), func() time.Time { return now })
-	id, made, err := s.Accept(ctx, reporter.ID, target.Ref, "spam")
-	if err != nil || !made {
-		t.Fatalf("accept: %v %v", made, err)
-	}
-	mail := &sender{fail: true}
-	if _, err := s.DispatchDue(ctx, mail); err == nil {
-		t.Fatal("wanted failed send")
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	db, err = store.Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if res, err := db.Migrate(ctx, migrations.FS); err != nil || res.Applied != 0 {
-		t.Fatalf("reopen migration %+v %v", res, err)
-	}
-	now = now.Add(2 * time.Minute)
-	s = moderation.NewStore(db.DB(), func() time.Time { return now })
-	mail.fail = false
-	if attempted, err := s.DispatchDue(ctx, mail); !attempted || err != nil {
-		t.Fatalf("retry: %v %v", attempted, err)
-	}
-	if len(mail.calls) != 2 || mail.calls[1].ReportID != id {
-		t.Fatalf("retry alert mismatch: %+v", mail.calls)
-	}
-	var sentAt int64
-	if err := db.DB().QueryRow(`SELECT sent_at FROM report_alert_outbox WHERE report_id = ?`, id).Scan(&sentAt); err != nil || sentAt != now.Unix() {
-		t.Fatalf("sent_at: %d %v", sentAt, err)
 	}
 }
 

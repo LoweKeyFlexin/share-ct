@@ -19,8 +19,7 @@ Ships in this order:
 
 A random per-device player id, a separate random public `player_ref`, the display name
 the player typed, scores with the attempt timings, the app version and device model.
-The draft reporting feature also stores a reporter, target, reason and review state.
-The private alert recipient is not stored in the database. No player email, account,
+A player report stores the reporter, target, reason and review state. No player email, account,
 ads or tracking. Players can rename or erase their data from the app.
 
 ## Status
@@ -119,7 +118,7 @@ player's id.
 | `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
 | `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_ref, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
 | `GET /v1/recent` | – | `200 {source:"recent", window:"all", entries:[...]}`; every entry also has `player_ref`. |
-| `POST /v1/reports` | bearer | `201 {report_id}` after a new report and its alert are committed; `202 {report_id}` for an identical earlier report. **Draft only: the review and mail adapter are not yet deployed.** |
+| `POST /v1/reports` | bearer | `201 {report_id}` after a new report is stored; `202 {report_id}` for an identical earlier report |
 | anything else | – | `404 {"error":"not_found"}` |
 
 ### Register a player
@@ -236,10 +235,10 @@ with the pad. Under `sort=score` the winning row is the highest-scoring one, so 
 and time can differ between the two sorts. `device_label` is `""` when the submission
 carried none.
 
-### Draft player report API — release blocked
+### Report a player
 
 Every board and recent row includes `player_ref`, 32 lowercase hex characters backed by
-128 cryptographically random bits. Migration 006 backfills old players inside its own
+128 cryptographically random bits. Migration 007 backfills old players inside its own
 transaction; a new registration mints a fresh ref. The ref stays the same when the player
 renames or submits scores. It is public, separate from both the bearer token and player id,
 and is never accepted as authentication. Erasing the player removes it.
@@ -256,34 +255,11 @@ must claim success only on 201 or 202. A report never changes board visibility b
 The reporter can create five distinct reports in a rolling 24 hours. An identical
 reporter/target/reason tuple returns the same ID only while the newest case is pending
 and less than 24 hours old. A dismissed or upheld case can be reported again immediately;
-an older pending case can be reported again after the window. A new case gets a new alert.
+an older pending case can be reported again after the window.
 The rolling quota is stored in SQLite, so a restart cannot reset it. A report and its
-email outbox item commit together; a storage failure cannot yield 201. Both reporter
-and target have `ON DELETE CASCADE`, and the outbox cascades from the report, including
-after an attempted delivery.
 
-The dispatcher commits a short claim with a 30-second lease before calling the provider,
-then sends only the opaque report ID under a 10-second context deadline. The provider
-adapter must honor cancellation and set its own network timeout. Failed sends retry with
-backoff from one minute to one hour. Erasing either player removes the report and its
-outbox item, including an in-flight claim, so completion cannot recreate a retryable
-alert. An already-started email cannot be recalled and may arrive after erasure begins;
-its ID-only link would then resolve to a missing report. A crash after provider acceptance
-may also repeat the same ID. The future email adapter should deduplicate by that ID.
-
-**Deployment decisions still required:** Aaron chose private email, but Will's mail
-provider, credentials, private recipient address, and secure review URL are not confirmed. The
-outbox exposes `moderation.AlertSender` and `DispatchDue`; no production adapter or
-background runner is wired, so this code does **not** send email. Configure the future
-adapter via private deployment secrets, never repo files or request logs. The email should
-carry only the report ID and a link to an authenticated review interface; the reason,
-target ref, name, and reporter details stay behind that interface. Proposed storm
-policy: preserve all accepted reports in SQLite, send at most ten alert emails per hour,
-and digest additional pending IDs hourly. This policy needs implementation and Aaron's
-approval before release. Aaron is the proposed review owner: the alert must lead him to a
-separate authenticated queue where he can read the case, dismiss or uphold it, globally
-suppress an upheld target's public rows, record the decision, and reverse it. Will must
-confirm the private recipient and support/response arrangement with Aaron at deployment.
-No operator action belongs in the public player API. Until that workflow, the mail adapter,
-privacy-policy/App Store disclosure review, and Will's exact local read-only compose test
-are complete, keep this PR draft and do not merge it to `main` (which publishes the image).
+A report is storage only: it sends no alert, has no side effect, and never acts on the
+reported player automatically. A storage failure cannot yield 201. Both reporter and
+target have `ON DELETE CASCADE`, so erasing either player removes every report involving
+them. Each report keeps a `state` (`pending`, `dismissed`, `upheld`) so later review
+tooling needs no migration. None exists yet.

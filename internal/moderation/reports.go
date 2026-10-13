@@ -1,4 +1,5 @@
-// Package moderation accepts player reports and keeps email alerts in a durable outbox.
+// Package moderation accepts player reports and stores them for later human review.
+// Storage only: no alert, no side effect and no automatic action on the reported player.
 package moderation
 
 import (
@@ -31,7 +32,7 @@ type RateLimited struct{ RetryAfter time.Duration }
 
 func (e RateLimited) Error() string { return "report rate limited" }
 
-// Store owns reports and their email outbox on the same SQLite connection.
+// Store owns the reports table on the shared SQLite connection.
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
@@ -44,7 +45,7 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 	return &Store{db: db, now: now}
 }
 
-// Accept commits a report and its alert together. A repeated pending report from the
+// Accept commits a report. A repeated pending report from the
 // same player in 24 hours is idempotent. A closed or older case starts a new report.
 func (s *Store) Accept(ctx context.Context, reporterID, targetRef, reason string) (id string, created bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -88,9 +89,6 @@ func (s *Store) Accept(ctx context.Context, reporterID, targetRef, reason string
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO reports (id, reporter_id, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?)`, id, reporterID, targetID, reason, now); err != nil {
 		return "", false, fmt.Errorf("insert report: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO report_alert_outbox (report_id, next_attempt_at) VALUES (?, ?)`, id, now); err != nil {
-		return "", false, fmt.Errorf("enqueue alert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return "", false, err
