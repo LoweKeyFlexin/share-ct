@@ -112,15 +112,27 @@ func get(h http.Handler, token string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// As shipped (no team domain or AUD), /admin is off: 404 even with a well-formed token.
-func TestShippedDefaultIsOff(t *testing.T) {
-	if admin.AccessTeamDomain != "" || admin.AccessAudience != "" {
-		t.Skip("Access is configured; covered by the verifier tests")
+type failTransport struct{}
+
+func (failTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, io.ErrUnexpectedEOF
+}
+
+// The shipped settings refuse a token forged with our own key that names the real team's
+// issuer and AUD: it cannot verify against the team's published keys (here unreachable,
+// so nothing can verify at all). Runs offline.
+func TestShippedSettingsRejectAForgedToken(t *testing.T) {
+	if admin.AccessTeamDomain == "" || admin.AccessAudience == "" {
+		t.Fatal("shipped Access settings are empty: /admin would be off")
 	}
 	tm := newTeam(t)
-	h := handler(openDB(t), nil)
-	if rec := get(h, tm.token(t, tm.key, tm.good())); rec.Code != 404 {
-		t.Fatalf("unconfigured /admin = %d, want 404", rec.Code)
+	tm.domain = admin.AccessTeamDomain
+	claims := tm.good()
+	claims["aud"] = []string{admin.AccessAudience}
+	v := &admin.AccessVerifier{TeamDomain: admin.AccessTeamDomain, Audience: admin.AccessAudience,
+		Client: &http.Client{Transport: failTransport{}}, Now: func() time.Time { return clock }}
+	if rec := get(handler(openDB(t), v), tm.token(t, tm.key, claims)); rec.Code != 404 {
+		t.Fatalf("forged token with the real issuer/AUD = %d, want 404", rec.Code)
 	}
 }
 

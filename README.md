@@ -294,10 +294,9 @@ tooling needs no migration. None exists yet.
 ### Admin: the private reports page
 
 `GET /admin` is a read-only list of player reports (newest first, at most 500) for the
-board's owner. It is **off** until Cloudflare Access protects the `/admin` path and
-`internal/admin/admin.go`'s `AccessTeamDomain` and `AccessAudience` are filled in. Until
-then, and for any request without a valid Access login token, it answers `404` exactly
-like an unknown path. The token (`Cf-Access-Jwt-Assertion`) is verified, never trusted:
+board's owner. It is reachable only through Cloudflare Access on the `/admin` path. The team domain and AUD
+tag are `internal/admin/admin.go`'s `AccessTeamDomain` and `AccessAudience`. Any request
+without a valid Access login token gets `404`, exactly like an unknown path. The token (`Cf-Access-Jwt-Assertion`) is verified, never trusted:
 it must be RS256-signed by the team's published keys, carry the application's AUD tag and
 the team issuer, and be unexpired. Neither setting is a secret. The page is `no-store`,
 scriptless, HTML-escaped, and never shows who is signed in. It changes nothing.
