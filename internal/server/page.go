@@ -90,6 +90,46 @@ const boardScript = `(function () {
     return hit ? 't-' + hit : '';
   }
 
+  function platformInfo(value) {
+    var key = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    switch (key) {
+      case '': return { icon:'apple', label:'iPhone' }; // Aaron: all legacy scores are iPhone.
+      case 'ios': return { icon:'apple', label:'iOS / iPadOS' };
+      case 'android': return { icon:'android', label:'Android' };
+      case 'mac': return { icon:null, label:'Mac' };
+      case 'windows': return { icon:null, label:'Windows' };
+      default: return { icon:null, label:'Unknown platform' };
+    }
+  }
+  function platformGlyph(info) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'platform-glyph');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', info.label);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.6');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    function shape(tag, attrs) {
+      var node = document.createElementNS(ns, tag);
+      Object.keys(attrs).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+      svg.appendChild(node);
+    }
+    if (info.icon === 'apple') {
+      shape("path", {"d": "M15.8 6.3c-1.3-.1-2.4.8-3.7.8-1.1 0-2.1-.8-3.4-.7C5.7 6.6 4.2 9 4.5 12c.3 3.5 2.4 7.6 4.6 7.7 1.1.1 1.7-.7 3-.7s1.8.7 3 .6c1.6-.1 3.1-2.4 3.9-4.5-2.8-1.4-3.2-4.9-.6-6.7-.8-1.3-1.6-2-2.6-2.1Z"});
+      shape("path", {"d": "M12.2 5.5c-.2-2 1.3-3.6 3.5-3.9.2 2-1.4 3.7-3.5 3.9Z"});
+    }
+    else if (info.icon === 'android') {
+      shape("path", {"d": "M4 15a8 8 0 0 1 16 0v4H4zM7 7 5 3M17 7l2-4"});
+      shape("circle", {"cx": "8.5", "cy": "13", "r": ".8", "fill": "currentColor", "stroke": "none"});
+      shape("circle", {"cx": "15.5", "cy": "13", "r": ".8", "fill": "currentColor", "stroke": "none"});
+    }
+    return svg;
+  }
+
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
@@ -113,9 +153,22 @@ const boardScript = `(function () {
     head.appendChild(el('span', 'rk', feed ? '·' : String(e.rank)));
 
     var who = el('div', 'who');
-    who.appendChild(el('b', null, e.display_name));
-    who.appendChild(el('small', null,
-      [when(e.created_at), e.device_label].filter(Boolean).join(' · ')));
+    var identity = el('div', 'player-identity');
+    identity.appendChild(el('b', null, e.display_name));
+    var playerID = el('span', 'player-id');
+    if (e.player_short) playerID.appendChild(el('span', null, '· ' + e.player_short));
+    var origin = platformInfo(e.platform);
+    if (origin.icon) playerID.appendChild(platformGlyph(origin));
+    identity.appendChild(playerID);
+    who.appendChild(identity);
+    var platform = platformInfo(e.platform);
+    var subline = el('small', 'device-subline');
+    var date = when(e.created_at);
+    if (date) subline.appendChild(el('span', 'entry-date', date + ' ·'));
+    var device = el('span', 'device-identity');
+    device.appendChild(el('span', 'device-label', e.device_label || ''));
+    subline.appendChild(device);
+    who.appendChild(subline);
     head.appendChild(who);
 
     var big = el('div', 'big');
@@ -155,7 +208,6 @@ const boardScript = `(function () {
       dl.appendChild(runs);
     }
     def(dl, 'input', e.device_label);
-    def(dl, 'platform', e.platform);
     def(dl, 'set', when(e.created_at));
     def(dl, 'player', e.player_short);
     row.appendChild(dl);
@@ -232,7 +284,7 @@ var scriptHash = func() string {
 // Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
 // reader would notice, not deploys — several pushes can carry one visible change, and a
 // redeploy of identical content is not a new revision.
-const pageVersion = ".09"
+const pageVersion = ".12"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -279,6 +331,9 @@ const indexHead = `<!doctype html>
   .row:hover { border-color:var(--line2); }
   .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { flex:1 1 auto; min-width:0; }
+  .player-identity { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  .player-id { display:inline-flex; align-items:center; gap:4px; font: .65rem var(--mono); color:var(--mute); }
+  .player-id .platform-glyph { width:10px; height:10px; flex-basis:10px; }
   .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
   .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
                white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
@@ -289,6 +344,11 @@ const indexHead = `<!doctype html>
   .big b { display:block; font-size:1.3rem; font-weight:400; color:var(--headline, var(--tier, var(--ink))); }
   .big small { display:block; color:var(--mute); font-size:.74rem; }
   .chev { color:var(--mute); font-size:1rem; transition:transform .15s ease; flex:0 0 auto; }
+  .platform-glyph { width:13px; height:13px; flex:0 0 13px; color:var(--dim); }
+  .who .device-subline { display:flex; align-items:center; gap:5px; }
+  .device-identity { display:inline-flex; align-items:center; gap:5px; min-width:0; }
+  .device-label { overflow:hidden; text-overflow:ellipsis; }
+  .entry-date { flex-shrink:0; }
   .row[open] .chev { transform:rotate(90deg); }
 
   /* Top three wear the app's medals, and --headline lifts that metal onto the number the
