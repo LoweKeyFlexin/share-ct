@@ -280,11 +280,10 @@ var scriptHash = func() string {
 }()
 
 // pageVersion is the page's own revision, shown at the top right and bumped by hand on
-// every visible change (Aaron 2026-09-11: "at a Ver number to the far right (start with
-// Ver .01) for each revision"). Deliberately NOT the build sha: this counts revisions a
-// reader would notice, not deploys — several pushes can carry one visible change, and a
-// redeploy of identical content is not a new revision.
-const pageVersion = ".12"
+// every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
+// Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
+// Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
+const pageVersion = ".13"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

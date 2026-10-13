@@ -17,9 +17,10 @@ Ships in this order:
 
 ## What it stores
 
-A random per-device player id, the display name the player typed, scores with the
-attempt timings, the app version and device model. No email, no account, no ads, no
-tracking. Players can rename or erase their data from the app.
+A random per-device player id, a separate random public `player_ref`, the display name
+the player typed, scores with the attempt timings, the app version and device model.
+A player report stores the reporter, target, reason and review state. No player email, account,
+ads or tracking. Players can rename or erase their data from the app.
 
 ## Status
 
@@ -44,7 +45,7 @@ Logs are JSON lines on stdout, one object per line. Every boot prints, in order:
 
 ```
 {"msg":"starting","version":"…","commit":"…","go":"go1.23.x","database_path":"/data/leaderboard.db","listen_addr":"0.0.0.0:8080"}
-{"msg":"migrations","applied":5,"from":0,"to":5}     ← applied is 0 on every later boot
+{"msg":"migrations","applied":6,"from":0,"to":6}     ← applied is 0 on every later boot
 {"msg":"listening","addr":"[::]:8080"}               ← Linux reports the 0.0.0.0 wildcard as the dual-stack [::]
 ```
 
@@ -115,7 +116,9 @@ player's id.
 | `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
 | `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased; `404` when the id is unknown, an already-erased player included, which the app treats as finished too |
 | `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
-| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
+| `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_ref, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
+| `GET /v1/recent` | – | `200 {source:"recent", window:"all", entries:[...]}`; every entry also has `player_ref`. |
+| `POST /v1/reports` | bearer | `201 {report_id}` after a new report is stored; `202 {report_id}` for an identical earlier report |
 | anything else | – | `404 {"error":"not_found"}` |
 
 ### Register a player
@@ -231,3 +234,32 @@ a player whose best was set on a pad and who later played a worse trial on touch
 with the pad. Under `sort=score` the winning row is the highest-scoring one, so the label
 and time can differ between the two sorts. `device_label` is `""` when the submission
 carried none.
+
+### Report a player
+
+Every board and recent row includes `player_ref`, 32 lowercase hex characters backed by
+128 cryptographically random bits. Migration 007 backfills old players inside its own
+transaction; a new registration mints a fresh ref. The ref stays the same when the player
+renames or submits scores. It is public, separate from both the bearer token and player id,
+and is never accepted as authentication. Erasing the player removes it.
+
+`POST /v1/reports` accepts exactly `{ "target_player_ref": "…", "reason": "spam" }`
+with `spam`, `harassment`, or `inappropriate` as the only reasons. A bearer token is
+required. Errors are `401 {"error":"unauthorized"}` for missing or invalid auth,
+`404 {"error":"not_found"}` for a well-formed ref whose player is gone,
+`422 {"error":"invalid","reason":"target_player_ref"|"reason"|"self_report"|"unknown_field"}`,
+`429 {"error":"rate_limited"}` with `Retry-After`, or `500 {"error":"internal"}`.
+There is no player-owned route on this endpoint, so `403` is not applicable. The client
+must claim success only on 201 or 202. A report never changes board visibility by itself.
+
+The reporter can create five distinct reports in a rolling 24 hours. An identical
+reporter/target/reason tuple returns the same ID only while the newest case is pending
+and less than 24 hours old. A dismissed or upheld case can be reported again immediately;
+an older pending case can be reported again after the window.
+The rolling quota is stored in SQLite, so a restart cannot reset it. A report and its
+
+A report is storage only: it sends no alert, has no side effect, and never acts on the
+reported player automatically. A storage failure cannot yield 201. Both reporter and
+target have `ON DELETE CASCADE`, so erasing either player removes every report involving
+them. Each report keeps a `state` (`pending`, `dismissed`, `upheld`) so later review
+tooling needs no migration. None exists yet.

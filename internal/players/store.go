@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/LoweKeyFlexin/share-ct/internal/identity"
 )
 
 // ErrNotFound is returned when no player matches an id or token.
@@ -15,6 +17,7 @@ var ErrNotFound = errors.New("player not found")
 // Player is one row of the players table.
 type Player struct {
 	ID          string
+	Ref         string
 	DisplayName string
 	Platform    string
 	CreatedAt   int64
@@ -38,7 +41,7 @@ func NewStore(db *sql.DB, now func() time.Time) *Store {
 	return &Store{db: db, now: now}
 }
 
-const playerColumns = `id, display_name, platform, created_at, last_seen_at`
+const playerColumns = `id, player_ref, display_name, platform, created_at, last_seen_at`
 
 // Create mints a player and returns it with the one-time bearer token. Only the
 // token's sha256 is stored.
@@ -51,20 +54,24 @@ func (s *Store) Create(ctx context.Context, displayName, platform string) (Playe
 	if err != nil {
 		return Player{}, "", err
 	}
+	ref, err := identity.NewRef()
+	if err != nil {
+		return Player{}, "", err
+	}
 	now := s.now().Unix()
-	const q = `INSERT INTO players (id, token_hash, display_name, platform, created_at, last_seen_at)
-	           VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, q, id, hashToken(token), displayName, platform, now, now); err != nil {
+	const q = `INSERT INTO players (id, player_ref, token_hash, display_name, platform, created_at, last_seen_at)
+	           VALUES (?, ?, ?, ?, ?, ?, ?)`
+	if _, err := s.db.ExecContext(ctx, q, id, ref, hashToken(token), displayName, platform, now, now); err != nil {
 		return Player{}, "", fmt.Errorf("insert player: %w", err)
 	}
-	return Player{ID: id, DisplayName: displayName, Platform: platform, CreatedAt: now, LastSeenAt: now}, token, nil
+	return Player{ID: id, Ref: ref, DisplayName: displayName, Platform: platform, CreatedAt: now, LastSeenAt: now}, token, nil
 }
 
 // Get looks a player up by id.
 func (s *Store) Get(ctx context.Context, id string) (Player, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+playerColumns+` FROM players WHERE id = ?`, id)
 	var p Player
-	err := row.Scan(&p.ID, &p.DisplayName, &p.Platform, &p.CreatedAt, &p.LastSeenAt)
+	err := row.Scan(&p.ID, &p.Ref, &p.DisplayName, &p.Platform, &p.CreatedAt, &p.LastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Player{}, ErrNotFound
 	}
@@ -82,7 +89,7 @@ func (s *Store) Authenticate(ctx context.Context, token string) (Player, error) 
 	row := s.db.QueryRowContext(ctx, `SELECT `+playerColumns+`, token_hash FROM players WHERE token_hash = ?`, h)
 	var p Player
 	var stored string
-	err := row.Scan(&p.ID, &p.DisplayName, &p.Platform, &p.CreatedAt, &p.LastSeenAt, &stored)
+	err := row.Scan(&p.ID, &p.Ref, &p.DisplayName, &p.Platform, &p.CreatedAt, &p.LastSeenAt, &stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Player{}, ErrNotFound
 	}
