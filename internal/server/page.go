@@ -283,7 +283,7 @@ var scriptHash = func() string {
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".14"
+const pageVersion = ".15"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
