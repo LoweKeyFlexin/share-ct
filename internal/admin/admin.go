@@ -17,8 +17,8 @@ import (
 // The Cloudflare Access application that protects /admin. Neither value is a secret:
 // tokens are verified against the team's published public keys. Empty = /admin is off.
 const (
-	AccessTeamDomain = ""
-	AccessAudience   = ""
+	AccessTeamDomain = "bondhaus.cloudflareaccess.com"
+	AccessAudience   = "e7380bdee8f92b98d59be6adb2f07bd91ebdd41c91101b983f34bbe2436107db"
 )
 
 // MaxRows caps one page; reports are few, and the newest come first.
