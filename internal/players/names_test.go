@@ -45,6 +45,26 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+func TestPolicyRefusesWithoutMaskingStoredNames(t *testing.T) {
+	rejects := func(name string) bool { return strings.EqualFold(name, "TEAPOT") }
+	// An existing stored name is shown as stored: the policy gates writes only.
+	if got := Display("Teapot"); got != "Teapot" {
+		t.Errorf("stored name is shown as %q, want it unmasked", got)
+	}
+	if got := Display(""); got != AnonymousName {
+		t.Errorf("empty stored name is shown as %q", got)
+	}
+	if _, reason := validateDisplayName("CAFÉ", rejects); reason != "" {
+		t.Errorf("Unicode letter admission changed unexpectedly: %s", reason)
+	}
+	if _, reason := validateDisplayName("Teapot", rejects); reason != "name_inappropriate" {
+		t.Errorf("policy rejection reason = %q", reason)
+	}
+	if _, reason := validateDisplayName("NAME HIDDEN", rejects); reason != "name_reserved" {
+		t.Errorf("app-reserved handle must stay reserved: %q", reason)
+	}
+}
+
 func TestValidPlatform(t *testing.T) {
 	for _, p := range []string{"ios", "mac", "windows", "android"} {
 		if !ValidPlatform(p) {

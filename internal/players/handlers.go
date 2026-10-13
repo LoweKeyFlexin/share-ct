@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
+	"github.com/LoweKeyFlexin/share-ct/internal/namefilter"
 	"github.com/LoweKeyFlexin/share-ct/internal/ratelimit"
 )
 
@@ -61,6 +62,7 @@ type Module struct {
 	store         *Store
 	scores        Scores
 	registrations *ratelimit.Limiter
+	rejectName    func(string) bool
 }
 
 // New wires the feature on the shared connection. now is injectable for tests.
@@ -70,6 +72,7 @@ func New(log *slog.Logger, db *sql.DB, now func() time.Time, scores Scores) *Mod
 		store:         NewStore(db, now),
 		scores:        scores,
 		registrations: ratelimit.New(RegistrationsPerIP, registrationWindow, now),
+		rejectName:    namefilter.Rejects,
 	}
 }
 
@@ -108,7 +111,7 @@ func (m *Module) create(w http.ResponseWriter, r *http.Request) {
 	// is stored with an empty name, rendered AnonymousName wherever it is shown. Making
 	// this required is what broke the app - it sent an empty name, got 422, discarded the
 	// reason, and the player was left opted in with no account (controller-tester-fgc#6112).
-	name, reason := ValidateOptionalDisplayName(req.DisplayName)
+	name, reason := validateOptionalDisplayName(req.DisplayName, m.rejectName)
 	if reason != "" {
 		httpx.WriteInvalid(w, reason)
 		return
@@ -147,7 +150,7 @@ func (m *Module) rename(w http.ResponseWriter, r *http.Request) {
 	// Clearing the field is a way back to anonymous, not an error. Aaron, 2026-09-11:
 	// "entering nothing on the keyboard for Entry should just default the player back to
 	// NO NAME."
-	name, reason := ValidateOptionalDisplayName(req.DisplayName)
+	name, reason := validateOptionalDisplayName(req.DisplayName, m.rejectName)
 	if reason != "" {
 		httpx.WriteInvalid(w, reason)
 		return
