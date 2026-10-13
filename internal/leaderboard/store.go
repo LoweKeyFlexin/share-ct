@@ -174,6 +174,7 @@ func orderBy(sort, alias string) string {
 // score, and when.
 type Entry struct {
 	Rank        int     `json:"rank"`
+	PlayerRef   string  `json:"player_ref"`
 	PlayerShort string  `json:"player_short"`
 	DisplayName string  `json:"display_name"`
 	Score       int     `json:"score"`
@@ -266,7 +267,7 @@ func bestPerPlayer(sort, source string) string {
 // Rank here is position in the feed, which is chronological, not a standing.
 func (s *Store) Recent(ctx context.Context, source string, limit int) ([]Entry, error) {
 	q := `
-	  SELECT s.player_id, p.display_name, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform,
+	  SELECT s.player_id, p.player_ref, p.display_name, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform,
 	         s.device_label, s.created_at, s.source, s.attempts_ms, s.misfires
 	  FROM submissions s JOIN players p ON p.id = s.player_id`
 	args := []any{limit}
@@ -289,7 +290,7 @@ func (s *Store) Recent(ctx context.Context, source string, limit int) ([]Entry, 
 		var label sql.NullString
 		var created int64
 		var attempts string
-		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy,
+		if err := rows.Scan(&playerID, &e.PlayerRef, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy,
 			&e.Platform, &label, &created, &e.Source, &attempts, &e.Misfires); err != nil {
 			return nil, err
 		}
@@ -327,7 +328,7 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		return nil, fmt.Errorf("board: unknown source %q", source)
 	}
 	q := `WITH best AS (` + bestPerPlayer(sort, source) + `)
-	  SELECT b.player_id, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform,
+	  SELECT b.player_id, p.player_ref, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform,
 	         b.device_label, b.created_at, b.source, b.attempts_ms, b.misfires
 	  FROM best b JOIN players p ON p.id = b.player_id
 	  WHERE b.rn = 1
@@ -349,7 +350,7 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 		var label sql.NullString // "" was stored as NULL
 		var created int64
 		var attempts string
-		if err := rows.Scan(&playerID, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform,
+		if err := rows.Scan(&playerID, &e.PlayerRef, &e.DisplayName, &e.Score, &e.BestMs, &e.AvgMs, &e.Accuracy, &e.Platform,
 			&label, &created, &e.Source, &attempts, &e.Misfires); err != nil {
 			return nil, err
 		}
