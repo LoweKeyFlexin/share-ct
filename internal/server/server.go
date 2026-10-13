@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LoweKeyFlexin/share-ct/internal/admin"
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
 	"github.com/LoweKeyFlexin/share-ct/internal/leaderboard"
 	"github.com/LoweKeyFlexin/share-ct/internal/moderation"
@@ -36,6 +37,7 @@ func New(log *slog.Logger, db *store.Store, now func() time.Time) http.Handler {
 	pl.Register(mux)
 	leaderboard.New(log, scores, pl.RequireBearer, now).Register(mux)
 	moderation.New(log, db.DB(), now).Register(mux, pl.RequireBearer)
+	admin.New(log, db.DB(), nil).Register(mux) // off (404) until Cloudflare Access is configured
 
 	mux.HandleFunc("/", handleNotFound)
 	return recoverer(log, secureHeaders(requestLogger(log, mux)))
