@@ -18,7 +18,8 @@ const boardScript = `(function () {
   // feed), FASTEST and HIGH SCORE (both the mixed board, differing only in what ranks it).
   // Per-input boards still exist on the API — source=touch|pad|keyboard — and can come back
   // as a filter when there are enough players to make three separate boards worth reading.
-  var state = { view: 'recent' };
+  var state = { view: 'recent', drill: '' };
+  var loadGeneration = 0;
 
   // How deep each list goes. FASTEST is a TOP TEN by Aaron's ask; the other two stay
   // long. Note what actually bounds these: the server returns ONE ROW PER PLAYER
@@ -133,8 +134,9 @@ const boardScript = `(function () {
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
-    var byScore = state.view === 'score';
-    var feed = state.view === 'recent';
+    var endless = !!state.drill;
+    var byScore = endless || state.view === 'score';
+    var feed = !endless && state.view === 'recent';
     // A feed has no standings, so it has no podium either.
     var podium = !feed && e.rank <= 3;
     var cls = 'row';
@@ -173,15 +175,17 @@ const boardScript = `(function () {
 
     var big = el('div', 'big');
     big.appendChild(el('b', null, byScore ? String(e.score) : frames(e.best_ms)));
-    big.appendChild(el('small', null, byScore ? frames(e.best_ms) : 'avg ' + frames(e.avg_ms)));
+    big.appendChild(el('small', null, endless ? 'POINTS' : (byScore ? frames(e.best_ms) : 'avg ' + frames(e.avg_ms))));
     head.appendChild(big);
 
     head.appendChild(el('span', 'chev', '›'));
     row.appendChild(head);
 
     var dl = el('dl', 'detail');
-    def(dl, 'best', frames(e.best_ms) + ' · ' + Math.round(e.best_ms) + ' ms');
-    def(dl, 'avg', frames(e.avg_ms) + ' · ' + Math.round(e.avg_ms) + ' ms');
+    if (!endless) {
+      def(dl, 'best', frames(e.best_ms) + ' · ' + Math.round(e.best_ms) + ' ms');
+      def(dl, 'avg', frames(e.avg_ms) + ' · ' + Math.round(e.avg_ms) + ' ms');
+    }
     if (typeof e.accuracy === 'number') def(dl, 'landed', Math.round(e.accuracy * 100) + '%');
     def(dl, 'score', String(e.score));
     // The tier is a SPEED rank (TierName is a pure function of best_ms), so on a score
@@ -215,6 +219,7 @@ const boardScript = `(function () {
   }
 
   function render(board) {
+    document.getElementById('board-heading').textContent = state.drill ? 'ENDLESS LEADERBOARD' : 'REACTION LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -226,7 +231,7 @@ const boardScript = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = (state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '';
+    ranked.textContent = state.drill ? 'Endless: highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.' : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -237,12 +242,14 @@ const boardScript = `(function () {
     // window=all is now fixed: Aaron, "let's remove the 30 days metric from the
     // leaderboard for now". The server still accepts the parameter, so the board can grow
     // a window control again without a server change — nothing was removed underneath.
-    var url = state.view === 'recent'
+    var generation = ++loadGeneration;
+    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' : state.view === 'recent'
       ? '/v1/recent?limit=' + LIMITS.recent
       : '/v1/board?source=all&window=all&sort=' + state.view + '&limit=' + LIMITS[state.view];
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(function (board) {
+        if (generation !== loadGeneration) return;
         try {
           render(board);
         } catch (err) {
@@ -254,6 +261,7 @@ const boardScript = `(function () {
         }
       })
       .catch(function () {
+        if (generation !== loadGeneration) return;
         board_.hidden = true;
         status.textContent = 'BOARD OFFLINE — beta, may go down.';
       });
@@ -262,6 +270,8 @@ const boardScript = `(function () {
   Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
     button.addEventListener('click', function () {
       state.view = button.getAttribute('data-view');
+      state.drill = '';
+      document.getElementById('endless-drill').value = '';
       Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (other) {
         other.setAttribute('aria-pressed', String(other === button));
       });
@@ -269,6 +279,13 @@ const boardScript = `(function () {
     });
   });
 
+  document.getElementById('endless-drill').addEventListener('change', function () {
+    state.drill = this.value;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
+      button.setAttribute('aria-pressed', String(!state.drill && button.getAttribute('data-view') === state.view));
+    });
+    load();
+  });
   load();
 })();
 `
@@ -279,11 +296,11 @@ var scriptHash = func() string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }()
 
-// pageVersion is the page's own revision, shown at the top right and bumped by hand on
+// pageVersion is the page's own revision, shown at the top right and bumped on EVERY merge to main, including API changes; previously bumped by hand on
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".16"
+const pageVersion = ".17"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -430,6 +447,8 @@ const indexHead = `<!doctype html>
   .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
                  background:var(--well); border:1px solid var(--line); border-radius:.3rem;
                  padding:.26rem .55rem; cursor:pointer; }
+  .tabs label { font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim); }
+  .tabs select { background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:4px; padding:.4rem; font:inherit; font-size:.7rem; max-width:100%; }
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
@@ -452,7 +471,7 @@ const indexHead = `<!doctype html>
       <span class="ver">Ver ` + pageVersion + `</span>
     </div>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
+    <p>Reaction and Endless Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <div class="panelhead">
@@ -464,6 +483,15 @@ const indexHead = `<!doctype html>
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
         <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
+        <label for="endless-drill">ENDLESS</label>
+        <select id="endless-drill" aria-label="Endless drill leaderboard">
+          <option value="">Choose a drill</option>
+          <option value="whiff-punish">Whiff Punish</option>
+          <option value="hit-confirm">Hit Confirm</option>
+          <option value="anti-air">Anti-Air</option>
+          <option value="crosscut">Crosscut</option>
+          <option value="drive-impact">Drive Impact</option>
+        </select>
       </nav>
     </div>
     <ol id="board" class="board" hidden></ol>
@@ -472,7 +500,7 @@ const indexHead = `<!doctype html>
   <footer>
     <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
-    <p>Scores are recomputed on the server from the attempt timings. No accounts, no tracking; erase your data from the app.</p>
+    <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>
