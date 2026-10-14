@@ -138,3 +138,34 @@ func TestBestPerDrillTiesConflictsBoundsAndErase(t *testing.T) {
 		}
 	}
 }
+
+func TestAllInputDevicesCompeteOnOneDrillBoard(t *testing.T) {
+	m, pl, h := harness(t)
+	ctx := context.Background()
+	for i, source := range []string{"pad", "keyboard", "touch"} {
+		p, _, err := pl.Create(ctx, fmt.Sprintf("Player %d", i), "ios")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := req(fmt.Sprintf("run-%d", i), "anti-air", 10+i)
+		r.Source = source
+		r.DeviceLabel = source
+		if _, _, err = m.save(ctx, p.ID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := call(h, "GET", "/v1/drills/board?drill_id=anti-air", "", "")
+	var b Board
+	if err := json.Unmarshal(w.Body.Bytes(), &b); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || len(b.Entries) != 3 || b.BoardSize != 3 {
+		t.Fatalf("mixed board %+v", b)
+	}
+	for i, source := range []string{"touch", "keyboard", "pad"} {
+		e := b.Entries[i]
+		if e.Rank != i+1 || e.Score != 12-i || e.Source != source {
+			t.Fatalf("entry %d %+v", i, e)
+		}
+	}
+}
