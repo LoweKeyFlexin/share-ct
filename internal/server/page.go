@@ -219,6 +219,7 @@ const boardScript = `(function () {
   }
 
   function render(board) {
+    document.getElementById('board-heading').textContent = state.drill ? 'ENDLESS LEADERBOARD' : 'REACTION LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -446,6 +447,8 @@ const indexHead = `<!doctype html>
   .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
                  background:var(--well); border:1px solid var(--line); border-radius:.3rem;
                  padding:.26rem .55rem; cursor:pointer; }
+  .tabs label { font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim); }
+  .tabs select { background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:4px; padding:.4rem; font:inherit; font-size:.7rem; max-width:100%; }
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
@@ -468,7 +471,7 @@ const indexHead = `<!doctype html>
       <span class="ver">Ver ` + pageVersion + `</span>
     </div>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>The reaction leaderboard for Fighter CT. Scores are opt-in from the app.</p>
+    <p>Reaction and Endless Drills leaderboards. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <div class="panelhead">
