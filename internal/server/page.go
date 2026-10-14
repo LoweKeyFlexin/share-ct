@@ -497,7 +497,7 @@ const indexHead = `<!doctype html>
   <footer>
     <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
-    <p>Scores are recomputed on the server from the attempt timings. No accounts, no tracking; erase your data from the app.</p>
+    <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>

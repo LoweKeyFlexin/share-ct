@@ -300,3 +300,36 @@ without a valid Access login token gets `404`, exactly like an unknown path. The
 it must be RS256-signed by the team's published keys, carry the application's AUD tag and
 the team issuer, and be unexpired. Neither setting is a secret. The page is `no-store`,
 scriptless, HTML-escaped, and never shows who is signed in. It changes nothing.
+
+### Endless Drills
+
+Each drill has an independent all-time high-score board at 100% speed with three lives.
+One point counts a successful active reaction; a correct hold, ignored poke or feint earns
+no point and costs no life. Reaction routes and ranking remain unchanged.
+
+`POST /v1/drills/scores` requires the existing bearer identity and exactly these keys:
+`client_id`, `drill_id`, `score`, `misses`, `source`, `app_build`, `platform`, `device_model`,
+`device_label`. Drill IDs: `whiff-punish`, `hit-confirm`, `anti-air`, `crosscut`, `drive-impact`.
+`score` must be an integer in 0–1,000,000; `misses` must equal 3 (natural game over).
+Source is `touch`, `pad`, or `keyboard`; metadata follows Reaction length/platform bounds.
+Unknown fields return 422. These aggregate counts are validated, not independently
+recomputed from input events. There are no per-reaction traces.
+
+A new run returns `201 {submission_id, rank, board_size}`. The last 100 accepted run
+receipts per player return 200 for an identical retry and 422 `client_id_conflict` if
+its id is reused with a different body. Once a receipt ages out, a replay still cannot
+create a second board row, lower a best, or change the date of an equal score.
+At most one best is stored per player/drill. Submission quotas are 10/minute/player
+and 60/minute/IP. Player erasure cascades through both bests and retry receipts.
+
+`GET /v1/drills/board?drill_id=whiff-punish&limit=50` returns
+`{drill_id, entries:[], own:null, board_size}`. Limits default to 50 and cap at 100;
+invalid drill/limit queries return 400. One row per player, highest score first,
+ties to the earliest achievement. Rows include rank, public `player_ref`, player short,
+display name, score, source, platform, controller name and server timestamp. A valid
+optional bearer adds `own` even outside the requested top entries; an invalid bearer
+returns 401. Public references support existing reports and local app blocks.
+
+The website offers a separate selector for each drill. The app builds neither a board
+read nor a score request until enrollment and acceptance of the expanded disclosure.
+It never uploads earlier local Endless runs on enrollment alone.
