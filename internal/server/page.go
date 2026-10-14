@@ -471,7 +471,7 @@ const indexHead = `<!doctype html>
       <span class="ver">Ver ` + pageVersion + `</span>
     </div>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>Reaction and Endless Drills leaderboards. Scores are opt-in from the app.</p>
+    <p>Reaction and Endless Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <div class="panelhead">
