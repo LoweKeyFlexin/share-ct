@@ -309,7 +309,12 @@ no point and costs no life. Reaction routes and ranking remain unchanged.
 
 `POST /v1/drills/scores` requires the existing bearer identity and exactly these keys:
 `client_id`, `drill_id`, `score`, `misses`, `source`, `app_build`, `platform`, `device_model`,
-`device_label`. Drill IDs: `whiff-punish`, `hit-confirm`, `anti-air`, `crosscut`, `drive-impact`.
+`device_label`. Drill IDs: `whiff-punish`, `hit-confirm`, `anti-air`, `crosscut`, `drive-impact`, `mental-stack`.
+Ranked Mental Stack uses all five encounters at 100% speed; custom subsets remain
+local practice. Practice requires all five drills unlocked; ranked Endless requires
+all five Level 4 clears. The client enforces this eligibility before submission; the aggregate
+API does not receive an encounter trace or a custom selection. The new category uses
+the existing payload, sharing scope, retention and consent contract.
 `score` must be an integer in 0–1,000,000; `misses` must equal 3 (natural game over).
 Source is `touch`, `pad`, or `keyboard`; metadata follows Reaction length/platform bounds.
 Unknown fields return 422. These aggregate counts are validated, not independently

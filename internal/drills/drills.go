@@ -80,7 +80,7 @@ func (m *Module) Register(mux *http.ServeMux, auth func(http.Handler) http.Handl
 }
 func validDrill(id string) bool {
 	switch id {
-	case "whiff-punish", "hit-confirm", "anti-air", "crosscut", "drive-impact":
+	case "whiff-punish", "hit-confirm", "anti-air", "crosscut", "drive-impact", "mental-stack":
 		return true
 	}
 	return false
