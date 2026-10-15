@@ -103,6 +103,14 @@ const boardScript = `(function () {
     return { tier: podium ? 'LEGEND' : name, podium: podium };
   }
 
+  function emptyBoardPresentation(drill, recent, boardSize) {
+    var existingRecords = !!drill && recent && boardSize > 0;
+    return {
+      message: existingRecords ? 'No recent runs yet. View HIGH SCORE for existing records.' : 'No scores yet.',
+      offerHighScores: existingRecords
+    };
+  }
+
   function platformInfo(value) {
     var key = typeof value === 'string' ? value.trim().toLowerCase() : '';
     switch (key) {
@@ -243,7 +251,17 @@ const boardScript = `(function () {
       ranked.textContent = '';
       // state.source died with the per-input filter; reading it here rendered the literal
       // "No undefined scores yet." on any empty ranking.
-      status.textContent = 'No scores yet.';
+      var empty = emptyBoardPresentation(state.drill, state.view === 'recent', board.board_size);
+      status.textContent = empty.message;
+      if (empty.offerHighScores) {
+        var highScores = el('button', 'view-high-scores', 'VIEW HIGH SCORES');
+        highScores.type = 'button';
+        highScores.addEventListener('click', function () {
+          // Reuse the native view control, keeping the selected drill unchanged.
+          document.querySelector('[data-view="score"]').click();
+        });
+        status.appendChild(highScores);
+      }
       return;
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
@@ -353,6 +371,9 @@ const indexHead = `<!doctype html>
   .ranked { margin:.35rem 0 0; color:var(--mute); font-size:.8rem; }
   #status { padding:1.25rem; margin:0; color:var(--dim); min-height:1.5rem; }
   #status:empty { display:none; }
+  .view-high-scores { display:block; margin:.75rem 0 0; padding:.5rem .75rem; font:inherit;
+    min-height:44px; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:4px; cursor:pointer; }
+  .view-high-scores:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
 
   /* The board is a list of cards, not a table. Aaron, on the app's own score log:
      "have scores present more like the app where you can click down into them to view
