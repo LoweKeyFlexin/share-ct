@@ -105,10 +105,8 @@ func TestFeedCountAgeBoundsAndRetryProofAfterReceiptRingRollsOver(t *testing.T) 
 	m.now = func() time.Time { return clock }
 	for i := 0; i < 250; i++ {
 		clock = base.Add(time.Duration(i) * time.Second)
-		drill := "anti-air"
-		if i%2 == 1 {
-			drill = "crosscut"
-		}
+		drills := []string{"anti-air", "crosscut", "whiff-punish", "hit-confirm", "drive-impact", "mental-stack"}
+		drill := drills[i%len(drills)]
 		if _, _, err := m.saveWithIntent(ctx, p.ID, req(fmt.Sprint(i), drill, 250-i), true); err != nil {
 			t.Fatal(err)
 		}
@@ -118,6 +116,13 @@ func TestFeedCountAgeBoundsAndRetryProofAfterReceiptRingRollsOver(t *testing.T) 
 	_ = m.db.QueryRow(`SELECT count(*) FROM drill_receipts WHERE player_id=?`, p.ID).Scan(&receipts)
 	if count != RunCap || receipts != 100 {
 		t.Fatal(count, receipts)
+	}
+	var categories, bests int
+	if err := m.db.QueryRow(`SELECT count(DISTINCT drill_id) FROM drill_runs WHERE player_id=?`, p.ID).Scan(&categories); err != nil || categories != 6 {
+		t.Fatal("shared cap omitted a category", categories, err)
+	}
+	if err := m.db.QueryRow(`SELECT count(*) FROM drill_bests WHERE player_id=?`, p.ID).Scan(&bests); err != nil || bests != 6 {
+		t.Fatal("shared cap changed per-drill bests", bests, err)
 	}
 	// Run60 remains in the 200-row feed after its retry receipt left the 100-row ring.
 	original, err := m.readRecent(ctx, "anti-air", p.ID, 100)
