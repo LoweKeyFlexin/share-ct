@@ -50,3 +50,32 @@ test('empty Drills Recent offers existing Top records without changing other emp
     assert.equal(empty.message, 'No scores yet.');
   }
 });
+
+// Run the actual card builder against a tiny DOM surface. Layout geometry is
+// checked in Chrome; this pins who owns identity, score and full metadata.
+test('card metadata owns readable sibling lines outside the identity and score columns', () => {
+  class Element {
+    constructor(tag) { this.tag = tag; this.children = []; this.className = ''; this.text = ''; }
+    set textContent(value) { this.text = String(value); this.children = []; }
+    get textContent() { return this.text + this.children.map(child => child.textContent).join(''); }
+    appendChild(child) { this.children.push(child); child.parent = this; return child; }
+    setAttribute(key, value) { this[key] = value; }
+  }
+  const document = {createElement: tag => new Element(tag), createElementNS: (_,tag) => new Element(tag)};
+  const ctx = vm.createContext({document, FRAME_MS: 1000/60, state:{drill:'',view:'recent'}});
+  vm.runInContext(source.slice(source.indexOf('  function el('),source.indexOf('  function render(')),ctx);
+  const find = (node, cls) => node.className.split(' ').includes(cls) ? node : node.children.map(child=>find(child,cls)).find(Boolean);
+  for (const label of ['DualSense Edge Wireless Controller','X'.repeat(180)]) {
+    const card = ctx.card({rank:1,display_name:'ABCDEFGHIJKLMNOP',player_short:'AB12',source:'pad',platform:'ios',
+      device_label:label,created_at:'2026-10-14T22:54:49Z',score:2100,best_ms:200,avg_ms:210,tier:'MASTER'});
+    const summary = card.children[0], metadata = find(card,'device-subline');
+    assert.equal(metadata.parent,summary);
+    assert.equal(find(card,'who').parent,summary);
+    assert.equal(find(card,'big').parent,summary);
+    assert.equal(find(card,'device-identity').parent,metadata);
+    assert.equal(find(card,'entry-date').parent,metadata);
+    assert.equal(find(card,'device-label').textContent,label);
+    assert.match(find(card,'player-identity').textContent,/ABCDEFGHIJKLMNOP/);
+    assert.equal(find(card,'big').children[0].textContent,'12.0f');
+  }
+});
