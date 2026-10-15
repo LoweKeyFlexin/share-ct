@@ -136,7 +136,7 @@ const boardScript = `(function () {
   function card(e) {
     var endless = !!state.drill;
     var byScore = endless || state.view === 'score';
-    var feed = !endless && state.view === 'recent';
+    var feed = state.view === 'recent';
     // A feed has no standings, so it has no podium either.
     var podium = !feed && e.rank <= 3;
     var cls = 'row';
@@ -219,7 +219,9 @@ const boardScript = `(function () {
   }
 
   function render(board) {
-    document.getElementById('board-heading').textContent = state.drill ? 'ENDLESS LEADERBOARD' : 'REACTION LEADERBOARD';
+    var activity = document.getElementById('endless-drill');
+    var title = activity.options[activity.selectedIndex].text;
+    document.getElementById('board-heading').textContent = title.toUpperCase() + ' LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -231,7 +233,7 @@ const boardScript = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = state.drill ? 'Endless: highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.' : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
+    ranked.textContent = state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -243,7 +245,7 @@ const boardScript = `(function () {
     // leaderboard for now". The server still accepts the parameter, so the board can grow
     // a window control again without a server change — nothing was removed underneath.
     var generation = ++loadGeneration;
-    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' : state.view === 'recent'
+    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
       ? '/v1/recent?limit=' + LIMITS.recent
       : '/v1/board?source=all&window=all&sort=' + state.view + '&limit=' + LIMITS[state.view];
     fetch(url, { headers: { Accept: 'application/json' } })
@@ -270,10 +272,9 @@ const boardScript = `(function () {
   Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
     button.addEventListener('click', function () {
       state.view = button.getAttribute('data-view');
-      state.drill = '';
-      document.getElementById('endless-drill').value = '';
+      if (state.drill && state.view === 'fastest') state.view = 'score';
       Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (other) {
-        other.setAttribute('aria-pressed', String(other === button));
+        other.setAttribute('aria-pressed', String(other.getAttribute('data-view') === state.view));
       });
       load();
     });
@@ -281,12 +282,15 @@ const boardScript = `(function () {
 
   document.getElementById('endless-drill').addEventListener('change', function () {
     state.drill = this.value;
+    if (state.drill && state.view === 'fastest') state.view = 'score';
+    document.querySelector('[data-view="fastest"]').disabled = !!state.drill;
     Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
-      button.setAttribute('aria-pressed', String(!state.drill && button.getAttribute('data-view') === state.view));
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-view') === state.view));
     });
     load();
   });
   load();
+  setInterval(function () { if (state.view === 'recent' && !document.hidden) load(); }, 15000);
 })();
 `
 
@@ -300,7 +304,7 @@ var scriptHash = func() string {
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".17"
+const pageVersion = ".18"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -471,11 +475,11 @@ const indexHead = `<!doctype html>
       <span class="ver">Ver ` + pageVersion + `</span>
     </div>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>Reaction and Endless Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
+    <p>Reaction Test and Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <div class="panelhead">
-      <h2 id="board-heading">Reaction leaderboard</h2>
+      <h2 id="board-heading">Reaction Test leaderboard</h2>
       <p id="ranked" class="ranked"></p>
     </div>
     <div class="controls">
@@ -483,9 +487,9 @@ const indexHead = `<!doctype html>
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
         <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
-        <label for="endless-drill">ENDLESS</label>
-        <select id="endless-drill" aria-label="Endless drill leaderboard">
-          <option value="">Choose a drill</option>
+        <label for="endless-drill">LEADERBOARD</label>
+        <select id="endless-drill" aria-label="Choose leaderboard">
+          <option value="" selected>Reaction Test</option>
           <option value="whiff-punish">Whiff Punish</option>
           <option value="hit-confirm">Hit Confirm</option>
           <option value="anti-air">Anti-Air</option>
@@ -498,9 +502,9 @@ const indexHead = `<!doctype html>
     <p id="status" role="status" aria-live="polite"></p>
   </section>
   <footer>
-    <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
+    <p>Reaction Test score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
-    <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
+    <p>Reaction scores are recomputed on the server from attempt timings. Drills scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>

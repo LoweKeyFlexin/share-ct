@@ -59,7 +59,7 @@ func TestGlobalEraseBothScoreTypesAndReregister(t *testing.T) {
 	endless := func(p identity, id string) {
 		t.Helper()
 		score := 6
-		request("POST", "/v1/drills/scores", drills.Request{ClientID: id, DrillID: "whiff-punish", Score: &score, Misses: 3, Source: "pad", AppBuild: "1", Platform: "ios", DeviceModel: "iPhone", DeviceLabel: "Pad"}, p.Token, 201)
+		request("POST", "/v1/drills/runs", drills.Request{ClientID: id, DrillID: "whiff-punish", Score: &score, Misses: 3, Source: "pad", AppBuild: "1", Platform: "ios", DeviceModel: "iPhone", DeviceLabel: "Pad"}, p.Token, 201)
 	}
 	a, b := register("Alpha"), register("Beta")
 	reaction(a, "reaction-a")
@@ -82,7 +82,7 @@ func TestGlobalEraseBothScoreTypesAndReregister(t *testing.T) {
 	// Another authenticated player cannot erase Alpha.
 	request("DELETE", "/v1/players/"+a.ID, nil, b.Token, http.StatusForbidden)
 	request("DELETE", "/v1/players/"+a.ID, nil, a.Token, http.StatusNoContent)
-	for _, table := range []string{"submissions", "drill_bests", "drill_receipts"} {
+	for _, table := range []string{"submissions", "drill_bests", "drill_receipts", "drill_runs"} {
 		var removed, retained int
 		if err := db.DB().QueryRow(`SELECT count(*) FROM `+table+` WHERE player_id=?`, a.ID).Scan(&removed); err != nil {
 			t.Fatal(err)
@@ -100,6 +100,7 @@ func TestGlobalEraseBothScoreTypesAndReregister(t *testing.T) {
 	}
 	request("DELETE", "/v1/players/"+a.ID, nil, a.Token, http.StatusNotFound)
 	request("POST", "/v1/drills/scores", nil, a.Token, http.StatusUnauthorized)
+	request("POST", "/v1/drills/runs", nil, a.Token, http.StatusUnauthorized)
 	// Beta's bearer remains valid, and both boards retain only Beta's score.
 	reaction(b, "reaction-b-next")
 	var board drills.Board

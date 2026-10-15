@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LoweKeyFlexin/share-ct/internal/drills"
 	"github.com/LoweKeyFlexin/share-ct/internal/namefilter"
 	"github.com/LoweKeyFlexin/share-ct/internal/server"
 	"github.com/LoweKeyFlexin/share-ct/internal/store"
@@ -110,6 +111,10 @@ func run(log *slog.Logger, listenAddr string) error {
 	}
 	log.Info("migrations", "applied", res.Applied, "from", res.From, "to", res.To)
 
+	if err := drills.PruneExpired(ctx, db.DB(), time.Now()); err != nil {
+		return fmt.Errorf("prune expired drills runs: %w", err)
+	}
+	go drills.MaintainRetention(ctx, db.DB(), log)
 	return serve(ctx, log, listenAddr, server.New(log, db, time.Now))
 }
 

@@ -39,12 +39,14 @@ type Entry struct {
 	Platform    string `json:"platform"`
 	DeviceLabel string `json:"device_label"`
 	CreatedAt   string `json:"created_at"`
+	RunRef      string `json:"run_ref,omitempty"`
 }
 type Board struct {
 	DrillID   string  `json:"drill_id"`
 	Entries   []Entry `json:"entries"`
 	Own       *Entry  `json:"own"`
 	BoardSize int     `json:"board_size"`
+	Sort      string  `json:"sort,omitempty"`
 }
 type Receipt struct {
 	SubmissionID int64 `json:"submission_id"`
@@ -66,6 +68,7 @@ func New(db *sql.DB, now func() time.Time) *Module {
 }
 func (m *Module) Register(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("POST /v1/drills/scores", auth(http.HandlerFunc(m.submit)))
+	mux.Handle("POST /v1/drills/runs", auth(http.HandlerFunc(m.submitRun)))
 	// The public website reads anonymously; an app bearer also adds its own standing.
 	mux.Handle("GET /v1/drills/board", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
@@ -104,6 +107,12 @@ func validate(r Request) string {
 	return ""
 }
 func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
+	m.submitWithIntent(w, r, false)
+}
+func (m *Module) submitRun(w http.ResponseWriter, r *http.Request) {
+	m.submitWithIntent(w, r, true)
+}
+func (m *Module) submitWithIntent(w http.ResponseWriter, r *http.Request, publishesRun bool) {
 	p, ok := players.FromContext(r.Context())
 	if !ok {
 		httpx.WriteError(w, 401, "unauthorized")
@@ -125,7 +134,7 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteRateLimited(w, retry)
 		return
 	}
-	id, repeated, err := m.save(r.Context(), p.ID, req)
+	id, repeated, err := m.saveWithIntent(r.Context(), p.ID, req, publishesRun)
 	if errors.Is(err, errConflict) {
 		httpx.WriteInvalid(w, "client_id_conflict")
 		return
@@ -153,6 +162,9 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 var errConflict = errors.New("client id already used for different body")
 
 func (m *Module) save(ctx context.Context, player string, req Request) (int64, bool, error) {
+	return m.saveWithIntent(ctx, player, req, false)
+}
+func (m *Module) saveWithIntent(ctx context.Context, player string, req Request, publishesRun bool) (int64, bool, error) {
 	data, _ := json.Marshal(req)
 	digest := sha256.Sum256(data)
 	hash := hex.EncodeToString(digest[:])
@@ -163,9 +175,10 @@ func (m *Module) save(ctx context.Context, player string, req Request) (int64, b
 	defer tx.Rollback()
 	var id int64
 	var oldHash string
-	err = tx.QueryRowContext(ctx, `SELECT id,body_hash FROM drill_receipts WHERE player_id=? AND client_id=?`, player, req.ClientID).Scan(&id, &oldHash)
+	var oldIntent bool
+	err = tx.QueryRowContext(ctx, `SELECT id,body_hash,publishes_run FROM drill_receipts WHERE player_id=? AND client_id=?`, player, req.ClientID).Scan(&id, &oldHash, &oldIntent)
 	if err == nil {
-		if oldHash != hash {
+		if oldHash != hash || oldIntent != publishesRun {
 			return 0, false, errConflict
 		}
 		return id, true, nil
@@ -173,8 +186,34 @@ func (m *Module) save(ctx context.Context, player string, req Request) (int64, b
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, err
 	}
+	// Run rows retain deduplication proof even after the smaller retry-receipt
+	// ring rolls over. Cross-route retries never promote best-only intent.
+	err = tx.QueryRowContext(ctx, `SELECT receipt_id,body_hash FROM drill_runs WHERE player_id=? AND client_id=?`, player, req.ClientID).Scan(&id, &oldHash)
+	if err == nil {
+		if !publishesRun || oldHash != hash {
+			return 0, false, errConflict
+		}
+		return id, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, false, err
+	}
+	// A retained all-time best is durable proof that this client ID already
+	// existed, even if both bounded recent rings have since expired.
+	if publishesRun {
+		var retainedBest bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM drill_bests WHERE player_id=? AND client_id=?)`, player, req.ClientID).Scan(&retainedBest); err != nil {
+			return 0, false, err
+		}
+		if retainedBest {
+			return 0, false, errConflict
+		}
+	}
 	now := m.now().Unix()
-	result, err := tx.ExecContext(ctx, `INSERT INTO drill_receipts(player_id,client_id,body_hash,created_at) VALUES(?,?,?,?)`, player, req.ClientID, hash, now)
+	if _, err = tx.ExecContext(ctx, `DELETE FROM drill_runs WHERE created_at<?`, m.now().Add(-RunRetention).Unix()); err != nil {
+		return 0, false, err
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO drill_receipts(player_id,client_id,body_hash,created_at,publishes_run) VALUES(?,?,?,?,?)`, player, req.ClientID, hash, now, publishesRun)
 	if err != nil {
 		return 0, false, err
 	}
@@ -189,6 +228,16 @@ func (m *Module) save(ctx context.Context, player string, req Request) (int64, b
  WHERE excluded.score>drill_bests.score`, player, req.DrillID, req.ClientID, *req.Score, req.Source, req.AppBuild, req.Platform, req.DeviceModel, req.DeviceLabel, now)
 	if err != nil {
 		return 0, false, err
+	}
+	if publishesRun {
+		_, err = tx.ExecContext(ctx, `INSERT INTO drill_runs(player_id,client_id,receipt_id,body_hash,drill_id,score,source,app_build,platform,device_model,device_label,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, player, req.ClientID, id, hash, req.DrillID, *req.Score, req.Source, req.AppBuild, req.Platform, req.DeviceModel, req.DeviceLabel, now)
+		if err != nil {
+			return 0, false, err
+		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM drill_runs WHERE player_id=? AND id NOT IN (SELECT id FROM drill_runs WHERE player_id=? ORDER BY id DESC LIMIT ?)`, player, player, RunCap)
+		if err != nil {
+			return 0, false, err
+		}
 	}
 	_, err = tx.ExecContext(ctx, `DELETE FROM drill_receipts WHERE player_id=? AND id NOT IN
  (SELECT id FROM drill_receipts WHERE player_id=? ORDER BY id DESC LIMIT 100)`, player, player)
@@ -237,6 +286,11 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteBadRequest(w, "drill_id")
 		return
 	}
+	sort := q.Get("sort")
+	if sort != "" && sort != "top" && sort != "recent" {
+		httpx.WriteBadRequest(w, "sort")
+		return
+	}
 	limit := 50
 	if raw := q.Get("limit"); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -253,7 +307,16 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 	if p, ok := players.FromContext(r.Context()); ok {
 		player = p.ID
 	}
-	b, err := m.read(r.Context(), drill, player, limit)
+	var b Board
+	var err error
+	if sort == "recent" {
+		if limit > 50 {
+			limit = 50
+		}
+		b, err = m.readRecent(r.Context(), drill, player, limit)
+	} else {
+		b, err = m.read(r.Context(), drill, player, limit)
+	}
 	if err != nil {
 		httpx.WriteError(w, 500, "internal")
 		return
