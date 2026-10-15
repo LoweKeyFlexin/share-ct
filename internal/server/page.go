@@ -219,7 +219,9 @@ const boardScript = `(function () {
   }
 
   function render(board) {
-    document.getElementById('board-heading').textContent = state.drill ? 'ENDLESS LEADERBOARD' : 'REACTION LEADERBOARD';
+    var activity = document.getElementById('endless-drill');
+    var title = activity.options[activity.selectedIndex].text;
+    document.getElementById('board-heading').textContent = title.toUpperCase() + ' LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -231,7 +233,7 @@ const boardScript = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = state.drill ? (state.view === 'recent' ? 'Every newly shared completed Endless run, newest first.' : 'Endless: highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
+    ranked.textContent = state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -473,11 +475,11 @@ const indexHead = `<!doctype html>
       <span class="ver">Ver ` + pageVersion + `</span>
     </div>
     <span class="beta">BETA · MAY GO DOWN</span>
-    <p>Reaction and Endless Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
+    <p>Reaction Test and Drills leaderboards for Fighter CT. Scores are opt-in from the app.</p>
   </header>
   <section class="panel" aria-labelledby="board-heading">
     <div class="panelhead">
-      <h2 id="board-heading">Reaction leaderboard</h2>
+      <h2 id="board-heading">Reaction Test leaderboard</h2>
       <p id="ranked" class="ranked"></p>
     </div>
     <div class="controls">
@@ -485,9 +487,9 @@ const indexHead = `<!doctype html>
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
         <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
-        <label for="endless-drill">ENDLESS</label>
-        <select id="endless-drill" aria-label="Endless drill leaderboard">
-          <option value="">Choose a drill</option>
+        <label for="endless-drill">LEADERBOARD</label>
+        <select id="endless-drill" aria-label="Choose leaderboard">
+          <option value="" selected>Reaction Test</option>
           <option value="whiff-punish">Whiff Punish</option>
           <option value="hit-confirm">Hit Confirm</option>
           <option value="anti-air">Anti-Air</option>
@@ -500,9 +502,9 @@ const indexHead = `<!doctype html>
     <p id="status" role="status" aria-live="polite"></p>
   </section>
   <footer>
-    <p>Score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
+    <p>Reaction Test score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
-    <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
+    <p>Reaction scores are recomputed on the server from attempt timings. Drills scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>
