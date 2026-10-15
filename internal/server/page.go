@@ -136,7 +136,7 @@ const boardScript = `(function () {
   function card(e) {
     var endless = !!state.drill;
     var byScore = endless || state.view === 'score';
-    var feed = !endless && state.view === 'recent';
+    var feed = state.view === 'recent';
     // A feed has no standings, so it has no podium either.
     var podium = !feed && e.rank <= 3;
     var cls = 'row';
@@ -231,7 +231,7 @@ const boardScript = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = state.drill ? 'Endless: highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.' : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
+    ranked.textContent = state.drill ? (state.view === 'recent' ? 'Every newly shared completed Endless run, newest first.' : 'Endless: highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -243,7 +243,7 @@ const boardScript = `(function () {
     // leaderboard for now". The server still accepts the parameter, so the board can grow
     // a window control again without a server change — nothing was removed underneath.
     var generation = ++loadGeneration;
-    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' : state.view === 'recent'
+    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
       ? '/v1/recent?limit=' + LIMITS.recent
       : '/v1/board?source=all&window=all&sort=' + state.view + '&limit=' + LIMITS[state.view];
     fetch(url, { headers: { Accept: 'application/json' } })
@@ -270,10 +270,9 @@ const boardScript = `(function () {
   Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
     button.addEventListener('click', function () {
       state.view = button.getAttribute('data-view');
-      state.drill = '';
-      document.getElementById('endless-drill').value = '';
+      if (state.drill && state.view === 'fastest') state.view = 'score';
       Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (other) {
-        other.setAttribute('aria-pressed', String(other === button));
+        other.setAttribute('aria-pressed', String(other.getAttribute('data-view') === state.view));
       });
       load();
     });
@@ -281,12 +280,15 @@ const boardScript = `(function () {
 
   document.getElementById('endless-drill').addEventListener('change', function () {
     state.drill = this.value;
+    if (state.drill && state.view === 'fastest') state.view = 'score';
+    document.querySelector('[data-view="fastest"]').disabled = !!state.drill;
     Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
-      button.setAttribute('aria-pressed', String(!state.drill && button.getAttribute('data-view') === state.view));
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-view') === state.view));
     });
     load();
   });
   load();
+  setInterval(function () { if (state.view === 'recent' && !document.hidden) load(); }, 15000);
 })();
 `
 
@@ -300,7 +302,7 @@ var scriptHash = func() string {
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".17"
+const pageVersion = ".18"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

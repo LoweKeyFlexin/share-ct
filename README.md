@@ -333,3 +333,35 @@ returns 401. Public references support existing reports and local app blocks.
 The website offers a separate selector for each drill. The app builds neither a board
 read nor a score request until enrollment and acceptance of the expanded disclosure.
 It never uploads earlier local Endless runs on enrollment alone.
+
+## Endless Drills Recent Scores
+
+`POST /v1/drills/scores` keeps its original **best-only** contract. Older apps and
+already-queued best-only submissions never enter the new public feed. Clients must
+obtain renewed consent before automatically sending newly completed runs to
+`POST /v1/drills/runs`. That route accepts the identical strict score body and
+transactionally appends one run, updates the personal best only if higher, and
+stores its retry receipt. A repeated client ID/body/route returns the original
+receipt; a different body or sharing route conflicts rather than changing intent.
+Lower, tied and zero-point completed runs enter Recent without replacing a higher
+personal best. Historical best rows are not backfilled into Recent.
+
+`GET /v1/drills/board?drill_id=anti-air` retains its existing all-time ranking and
+response shape. `&sort=recent` returns `sort:"recent"` and the newest accepted run
+rows for that drill, ordered by server arrival then row ID **before** the requested
+limit (default and maximum 50). Feed entries carry `rank:0`, never a date-index
+standing, and an opaque stable `run_ref` derived from the public player reference
+and random per-run client ID. No private player ID or token is exposed. `own` and
+`board_size` retain the actual all-time standing. Unknown sorts are rejected.
+The same name, platform and input-device metadata and local blocking/reporting
+identity remain available on each run. The page's Recent switch shows this stream
+when a drill is selected and refreshes every 15 seconds while visible.
+
+Storage is bounded to the latest **200 run rows per player across all drills** and
+**90 days**, whichever expires first. Runs are removed on new submissions, Recent
+reads, at startup, and by an hourly worker tied to process shutdown; expired rows
+are excluded from reads while awaiting routine deletion. All-time bests remain
+independent. Retry receipts remain capped at 100/player; retained run rows also
+preserve retry proof after that ring rolls over. `DELETE /v1/players/{id}` cascades
+through the feed, bests, receipts and reports. Authentication against an erased
+identity cannot recreate its data. Reaction tables and endpoints are unchanged.
