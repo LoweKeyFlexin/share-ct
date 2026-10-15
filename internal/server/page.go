@@ -91,6 +91,18 @@ const boardScript = `(function () {
     return hit ? 't-' + hit : '';
   }
 
+  // Presentation only: the same points ladder as the app. A chronological run
+  // never inherits a player's all-time standing, even if its payload carries rank.
+  function drillsPresentation(entry, recent) {
+    var steps = [[0,'ROOKIE'], [3,'BRONZE'], [6,'SILVER'], [10,'GOLD'],
+                 [15,'PLATINUM'], [20,'DIAMOND'], [28,'MASTER'],
+                 [35,'HIGH MASTER'], [42,'GRAND MASTER'], [50,'ULTIMATE MASTER']];
+    var name = 'ROOKIE';
+    steps.forEach(function (step) { if (entry.score >= step[0]) name = step[1]; });
+    var podium = !recent && entry.score > 0 && entry.rank >= 1 && entry.rank <= 3;
+    return { tier: podium ? 'LEGEND' : name, podium: podium };
+  }
+
   function platformInfo(value) {
     var key = typeof value === 'string' ? value.trim().toLowerCase() : '';
     switch (key) {
@@ -138,9 +150,12 @@ const boardScript = `(function () {
     var byScore = endless || state.view === 'score';
     var feed = state.view === 'recent';
     // A feed has no standings, so it has no podium either.
-    var podium = !feed && e.rank <= 3;
+    var drillRank = endless ? drillsPresentation(e, feed) : null;
+    var podium = endless ? drillRank.podium : !feed && e.rank <= 3;
     var cls = 'row';
-    var tier = tierToken(e.tier);
+    if (endless) { cls += ' drill'; }
+    var tierName = endless ? drillRank.tier : e.tier;
+    var tier = endless && tierName === 'GRAND MASTER' ? 't-grandmaster' : tierToken(tierName);
     if (tier) { cls += ' ' + tier; }        // sets --tier for everything in the row
     if (podium) { cls += ' m' + e.rank; }   // sets --headline: the metal overrides the tier
     // The two rankings reward different things, so their podiums look different. FASTEST
@@ -195,7 +210,7 @@ const boardScript = `(function () {
     // no name for the colour is an unexplained decoration. On the score board the RANKED_BY
     // line says out loud that the tier is a SPEED rank, which is what makes a DIAMOND tier
     // beside the top score read as correct rather than as a bug.
-    def(dl, 'tier', e.tier, ('tier ' + tier).trim());
+    def(dl, 'tier', tierName, ('tier ' + tier).trim());
     if (Array.isArray(e.attempts_ms) && e.attempts_ms.length) {
       dl.appendChild(el('dt', null, 'run'));
       var runs = el('div', 'runs');
@@ -304,7 +319,7 @@ var scriptHash = func() string {
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".18"
+const pageVersion = ".19"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -426,6 +441,7 @@ const indexHead = `<!doctype html>
      rendered every tier grey (a bare .t-gold at (0,1,0) losing to .detail dd at (0,1,1)). */
   .row.t-legend    { --tier:var(--t-legend); }
   .row.t-ultimate  { --tier:var(--t-ultimate); }
+  .row.t-grandmaster { --tier:#FFD23A; } /* app GRAND metal midtone */
   .row.t-highmaster{ --tier:var(--t-highmaster); }
   .row.t-master    { --tier:var(--t-master); }
   .row.t-diamond   { --tier:var(--t-diamond); }
@@ -456,6 +472,10 @@ const indexHead = `<!doctype html>
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
+
+  /* Drills' headline follows its earned tier; the standing numeral keeps the
+     existing podium medal. Reaction's medal/foil rules above are unchanged. */
+  .row.drill .big b { background-image:none; color:var(--tier, var(--ink)); animation:none; }
 
   /* Every attempt of the run behind a row — the thing the score is recomputed from. */
   .runs { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.1rem; }
