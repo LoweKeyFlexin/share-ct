@@ -189,11 +189,10 @@ const boardScript = `(function () {
     var platform = platformInfo(e.platform);
     var subline = el('small', 'device-subline');
     var date = when(e.created_at);
-    if (date) subline.appendChild(el('span', 'entry-date', date + ' ·'));
+    if (date) subline.appendChild(el('span', 'entry-date', date));
     var device = el('span', 'device-identity');
     device.appendChild(el('span', 'device-label', e.device_label || ''));
     subline.appendChild(device);
-    who.appendChild(subline);
     head.appendChild(who);
 
     var big = el('div', 'big');
@@ -202,6 +201,7 @@ const boardScript = `(function () {
     head.appendChild(big);
 
     head.appendChild(el('span', 'chev', '›'));
+    head.appendChild(subline);
     row.appendChild(head);
 
     var dl = el('dl', 'detail');
@@ -337,7 +337,7 @@ var scriptHash = func() string {
 // every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
 // Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
 // Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".20"
+const pageVersion = ".21"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -380,31 +380,32 @@ const indexHead = `<!doctype html>
      more and doesn't make the leaderboard selection take up so much of the app." */
   .board { list-style:none; margin:0; padding:0 .75rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
   .row { border:1px solid var(--line); border-radius:.6rem; background:var(--well); overflow:hidden; }
-  .row > summary { display:flex; align-items:center; gap:.75rem; padding:.7rem .85rem; cursor:pointer;
-                   list-style:none; }
+  .row > summary { display:grid; grid-template-columns:1.4rem minmax(0,1fr) auto .5rem;
+                   grid-template-areas:"rank identity score disclosure" ". metadata metadata .";
+                   align-items:start; column-gap:.65rem; row-gap:.35rem; padding:.7rem .85rem; cursor:pointer; list-style:none; }
   .row > summary::-webkit-details-marker { display:none; }
   .row > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:-2px; }
   .row:hover { border-color:var(--line2); }
-  .rk { font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
-  .who { flex:1 1 auto; min-width:0; }
+  .rk { grid-area:rank; font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
+  .who { grid-area:identity; min-width:0; }
   .player-identity { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
   .player-id { display:inline-flex; align-items:center; gap:4px; font: .65rem var(--mono); color:var(--mute); }
   .player-id .platform-glyph { width:10px; height:10px; flex-basis:10px; }
   .who b { display:block; font-size:1.12rem; font-weight:700; letter-spacing:.01em; overflow-wrap:anywhere; }
-  .who small { display:block; margin-top:.15rem; color:var(--mute); font-family:var(--mono); font-size:.74rem;
-               white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
-  .big { text-align:right; font-family:var(--mono); flex:0 0 auto; }
+  .big { grid-area:score; white-space:nowrap; text-align:right; font-family:var(--mono); flex:0 0 auto; }
   /* The number that ranks the row wears the rank's colour. --headline (the podium metal)
      wins over --tier (the rank name's colour) and falls back to plain ink, all resolved
      in one declaration so nothing has to out-specify anything. */
   .big b { display:block; font-size:1.3rem; font-weight:400; color:var(--headline, var(--tier, var(--ink))); }
   .big small { display:block; color:var(--mute); font-size:.74rem; }
-  .chev { color:var(--mute); font-size:1rem; transition:transform .15s ease; flex:0 0 auto; }
+  .chev { grid-area:disclosure; color:var(--mute); font-size:1rem; transition:transform .15s ease; flex:0 0 auto; }
   .platform-glyph { width:13px; height:13px; flex:0 0 13px; color:var(--dim); }
-  .who .device-subline { display:flex; align-items:center; gap:5px; }
-  .device-identity { display:inline-flex; align-items:center; gap:5px; min-width:0; }
-  .device-label { overflow:hidden; text-overflow:ellipsis; }
-  .entry-date { flex-shrink:0; }
+  /* Metadata spans the identity and score columns. A date cannot squeeze the
+     controller label into a thin side column, and ordinary words stay intact. */
+  .device-subline { grid-area:metadata; min-width:0; display:grid; gap:.15rem; color:var(--mute);
+                    font-family:var(--mono); font-size:.74rem; line-height:1.4; }
+  .device-identity, .device-label, .entry-date { min-width:0; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
+  .device-identity { display:block; }
   .row[open] .chev { transform:rotate(90deg); }
 
   /* Top three wear the app's medals, and --headline lifts that metal onto the number the
@@ -449,11 +450,11 @@ const indexHead = `<!doctype html>
     .row.m1 .big b, .row.m2 .big b, .row.m3 .big b { background-image:none; color:var(--headline); }
   }
 
-  .detail { padding:.1rem .85rem .8rem 3.1rem; display:grid; grid-template-columns:auto 1fr; gap:.25rem .8rem;
+  .detail { padding:.1rem .85rem .8rem 3.1rem; display:grid; grid-template-columns:auto minmax(0,1fr); gap:.25rem .8rem;
             font-size:.82rem; }
   .detail dt { color:var(--mute); font-family:var(--mono); font-size:.7rem; letter-spacing:.1em;
                text-transform:uppercase; align-self:center; }
-  .detail dd { margin:0; font-family:var(--mono); color:var(--dim); }
+  .detail dd { margin:0; min-width:0; overflow-wrap:anywhere; font-family:var(--mono); color:var(--dim); }
   .detail dd.tier { font-weight:700; letter-spacing:.06em; color:var(--tier, var(--dim)); }
 
   /* One rank colour per row, declared as a VARIABLE on the row and inherited by both the
@@ -477,7 +478,7 @@ const indexHead = `<!doctype html>
      Above-and-adjacent is where a filter belongs — it has to be visible at the moment the
      list it governs is, and its effect has to be seen without hunting for the control. It
      earns its place by being small, not by being far away. */
-  .controls { position:sticky; top:0; z-index:2; background:var(--panel);
+  .controls { position:sticky; display:flex; flex-wrap:wrap; align-items:flex-end; gap:.75rem 1rem; top:0; z-index:2; background:var(--panel);
               padding:.25rem 1.25rem .7rem; border-bottom:1px solid var(--line); }
   .tabs { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; }
   /* An author display rule beats the UA stylesheet, so .tabs{display:flex} silently
@@ -488,11 +489,21 @@ const indexHead = `<!doctype html>
   .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
                  background:var(--well); border:1px solid var(--line); border-radius:.3rem;
                  padding:.26rem .55rem; cursor:pointer; }
-  .tabs label { font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim); }
-  .tabs select { background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:4px; padding:.5rem .75rem; font:inherit; font-size:1rem; min-height:44px; min-width:11rem; max-width:100%; box-sizing:border-box; }
+  .leaderboard-choice { display:grid; gap:.3rem; width:min(100%,20rem); min-width:0; }
+  .leaderboard-choice label { font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim); }
+  .leaderboard-choice select { background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:4px; padding:.5rem .75rem; font:inherit; font-size:1rem; min-height:44px; width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
   .tabs button:hover { color:var(--ink); border-color:var(--line2); }
   .tabs button:focus-visible { outline:2px solid var(--accent3); outline-offset:2px; }
   .tabs button[aria-pressed="true"] { color:var(--bg); background:var(--accent); border-color:var(--accent); }
+
+  @media (max-width:600px) {
+    .controls { display:block; }
+    .leaderboard-choice { width:100%; }
+    .tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:stretch; margin-top:.75rem; gap:.4rem; }
+    .tabs button { min-height:44px; font-size:.75rem; letter-spacing:.03em; padding:.5rem .3rem; }
+    .who b { font-size:1rem; }
+    .row > summary { column-gap:.5rem; }
+  }
 
   /* Drills' headline follows its earned tier; the standing numeral keeps the
      existing podium medal. Reaction's medal/foil rules above are unchanged. */
@@ -524,10 +535,7 @@ const indexHead = `<!doctype html>
       <p id="ranked" class="ranked"></p>
     </div>
     <div class="controls">
-      <nav class="tabs" aria-label="View">
-        <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
-        <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
-        <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
+      <div class="leaderboard-choice">
         <label for="endless-drill">LEADERBOARD</label>
         <select id="endless-drill" aria-label="Choose leaderboard">
           <option value="" selected>Reaction Test</option>
@@ -537,6 +545,11 @@ const indexHead = `<!doctype html>
           <option value="crosscut">Crosscut</option>
           <option value="drive-impact">Drive Impact</option>
         </select>
+      </div>
+      <nav class="tabs" aria-label="View">
+        <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
+        <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
+        <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
       </nav>
     </div>
     <ol id="board" class="board" hidden></ol>
