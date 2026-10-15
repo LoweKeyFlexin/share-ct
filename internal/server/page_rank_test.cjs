@@ -38,3 +38,15 @@ test('Recent uses this run points regardless of a supplied lifetime rank', () =>
     assert.equal(present(50, rank, true).podium, false);
   });
 });
+
+test('empty Drills Recent offers existing Top records without changing other empty states', () => {
+  const existing = context.emptyBoardPresentation('whiff-punish', true, 1);
+  assert.equal(existing.offerHighScores, true);
+  assert.match(existing.message, /No recent runs/);
+  assert.match(existing.message, /HIGH SCORE/);
+  for (const args of [['',true,1],['',false,1],['whiff-punish',false,1],['whiff-punish',true,0],['whiff-punish',true,undefined]]) {
+    const empty = context.emptyBoardPresentation(...args);
+    assert.equal(empty.offerHighScores, false);
+    assert.equal(empty.message, 'No scores yet.');
+  }
+});
