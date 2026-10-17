@@ -92,10 +92,14 @@ func TestBoardWinningRowFollowsTheSort(t *testing.T) {
 	hs.submitAt(tok, on("Hit Box", fast), time.Date(2026, 9, 11, 3, 0, 0, 0, time.UTC))
 	hs.submitAt(tok, on("DualSense Wireless Controller", steady), time.Date(2026, 9, 11, 4, 0, 0, 0, time.UTC))
 
-	cases := []struct{ query, label, created string }{
-		{"?source=pad", "Hit Box", "2026-09-11T03:00:00Z"},
-		{"?source=pad&sort=fastest", "Hit Box", "2026-09-11T03:00:00Z"},
-		{"?source=pad&sort=score", "DualSense Wireless Controller", "2026-09-11T04:00:00Z"},
+	cases := []struct {
+		query, label, created string
+		attempts              []any
+		misfires              float64
+	}{
+		{"?source=pad", "Hit Box", "2026-09-11T03:00:00Z", []any{float64(180), float64(500)}, 1},
+		{"?source=pad&sort=fastest", "Hit Box", "2026-09-11T03:00:00Z", []any{float64(180), float64(500)}, 1},
+		{"?source=pad&sort=score", "DualSense Wireless Controller", "2026-09-11T04:00:00Z", []any{float64(200), float64(205), float64(210)}, 0},
 	}
 	for _, c := range cases {
 		entries := hs.board(c.query)
@@ -106,10 +110,14 @@ func TestBoardWinningRowFollowsTheSort(t *testing.T) {
 		if e["device_label"] != c.label || e["created_at"] != c.created {
 			t.Errorf("%s: entry is %v · %v, want %s · %s", c.query, e["device_label"], e["created_at"], c.label, c.created)
 		}
+		if !reflect.DeepEqual(e["attempts_ms"], c.attempts) || e["misfires"] != c.misfires {
+			t.Errorf("%s: attempts are %v + %v misses, want winning row %v + %v misses",
+				c.query, e["attempts_ms"], e["misfires"], c.attempts, c.misfires)
+		}
 	}
 }
 
-func TestBoardEntryOmitsNothingTheClientReads(t *testing.T) {
+func TestBoardEntryDeclaresExactlyTheClientContract(t *testing.T) {
 	hs := newHarness(t)
 	_, tok := hs.named("AARON")
 	hs.submitAt(tok, on("Pad", trial("a", "pad", []float64{200, 205, 210}, 0)), hs.now)
@@ -120,19 +128,29 @@ func TestBoardEntryOmitsNothingTheClientReads(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("%d entries, want 2", len(entries))
 	}
+	want := []string{
+		"rank", "player_short", "display_name", "score", "best_ms", "avg_ms",
+		"accuracy", "tier", "platform", "device_label", "created_at", "source",
+		"attempts_ms", "misfires",
+	}
+	slices.Sort(want)
 	for _, e := range entries {
-		for _, k := range []string{
-			"rank", "player_short", "display_name", "score", "best_ms", "avg_ms",
-			"accuracy", "tier", "platform", "device_label", "created_at",
-		} {
-			if _, ok := e[k]; !ok {
-				t.Errorf("board entry %v is missing %q; the client's row cannot render without it", e["display_name"], k)
-			}
+		got := make([]string, 0, len(e))
+		for k := range e {
+			got = append(got, k)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("board entry %v declares %v, want exactly %v; the client and server must move together",
+				e["display_name"], got, want)
 		}
 	}
 	// A submission without a label (stored as NULL) still carries the key, as "".
 	if entries[1]["display_name"] != "NOLABEL" || entries[1]["device_label"] != "" {
 		t.Errorf("row without a label = %v, want device_label \"\"", entries[1])
+	}
+	if !reflect.DeepEqual(entries[0]["attempts_ms"], []any{float64(200), float64(205), float64(210)}) {
+		t.Errorf("AARON attempts = %v, want all three winning-run times", entries[0]["attempts_ms"])
 	}
 }
 
