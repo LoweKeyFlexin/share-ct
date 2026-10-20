@@ -243,14 +243,16 @@ const boardScriptSource = `(function () {
     return tile;
   }
 
-  fetch(AVATARS_URL).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-    .then(function (art) {
-      if (!art || !art.fighters) return;
-      avatarArt = art;
-      avatarWaiting.forEach(function (w) { try { paintAvatar(w[0], w[1]); } catch (e) {} });
-      avatarWaiting = [];
-    })
-    .catch(function () { avatarWaiting = []; });   // the tiles stay as plain tinted squares
+  function loadAvatarArt() {
+    fetch(AVATARS_URL).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (art) {
+        if (!art || !art.fighters) return;
+        avatarArt = art;
+        avatarWaiting.forEach(function (w) { try { paintAvatar(w[0], w[1]); } catch (e) {} });
+        avatarWaiting = [];
+      })
+      .catch(function () { avatarWaiting = []; });   // the tiles stay as plain tinted squares
+  }
 
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
@@ -425,6 +427,7 @@ const boardScriptSource = `(function () {
     });
     load();
   });
+  loadAvatarArt();
   load();
   setInterval(function () { if (state.view === 'recent' && !document.hidden) load(); }, 15000);
 })();
