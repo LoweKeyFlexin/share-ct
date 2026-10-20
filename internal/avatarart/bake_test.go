@@ -297,3 +297,33 @@ func cosmeticsDir(kit string) string {
 	}
 	return filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics")
 }
+
+// controller-tester-fgc#7853: the Mind Crown (kit fixed_tint) is drawn in its own colour inside its
+// mask, over the player-coloured head, with a halo behind the back head slot; the rest of the
+// head keeps the fighter's colour variables. Uses the committed file, baked from the real kit.
+func TestTheMindCrownDrawsItsOwnColourInsideItsMask(t *testing.T) {
+	data, err := os.ReadFile("../server/static/board-avatars.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out Output
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	for body, f := range out.Fighters {
+		head, ok := f.Gear["mind-crown"]
+		if !ok {
+			t.Fatalf("%s: no mind crown", body)
+		}
+		all := strings.Join(head, "")
+		if !strings.Contains(all, "rgb(124,242,166)") {
+			t.Errorf("%s: the crown is not drawn in #7CF2A6", body)
+		}
+		if !strings.Contains(all, "feGaussianBlur") {
+			t.Errorf("%s: no halo", body)
+		}
+		if !strings.Contains(all, "var(--m") && !strings.Contains(all, "var(--o") {
+			t.Errorf("%s: the head lost the player colour outside the mask", body)
+		}
+	}
+}
