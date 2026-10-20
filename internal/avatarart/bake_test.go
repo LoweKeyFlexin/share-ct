@@ -189,7 +189,7 @@ func TestCommittedBakeMatchesSources(t *testing.T) {
 		GearDir:      filepath.Join(fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
 		Roster:       filepath.Join(fgc, "CTCore/FighterRoster.swift"),
 		Colours:      filepath.Join(fgc, "CTCore/DrillsColourCatalog.swift"),
-		Cosmetics:    filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics"),
+		Cosmetics:    cosmeticsDir(kit),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -287,4 +287,13 @@ func TestBakeOutfitsAndKitGear(t *testing.T) {
 	if len(o.Gear["pirate-hat"]) != len(o.Head) {
 		t.Error("the host pirate hat is worn over outfit 2 too")
 	}
+}
+
+// cosmeticsDir is CT_COSMETICS when set (Outfit 2 from a newer kit export than the bodies),
+// else the kit's own cosmetics folder.
+func cosmeticsDir(kit string) string {
+	if dir := os.Getenv("CT_COSMETICS"); dir != "" {
+		return dir
+	}
+	return filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics")
 }
