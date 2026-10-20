@@ -53,7 +53,7 @@ func (m *Module) readRecent(ctx context.Context, drill, player string, limit int
 	}
 	board.Sort = "recent"
 	board.Entries = []Entry{}
-	rows, err := m.db.QueryContext(ctx, `SELECT p.id,p.player_ref,p.display_name,r.client_id,r.score,r.source,r.platform,r.device_label,r.created_at
+	rows, err := m.db.QueryContext(ctx, `SELECT p.id,p.player_ref,p.display_name,r.client_id,r.score,r.source,r.platform,r.device_label,r.created_at,p.avatar
  FROM drill_runs r JOIN players p ON p.id=r.player_id WHERE r.drill_id=? AND r.created_at>=?
  ORDER BY r.created_at DESC,r.id DESC LIMIT ?`, drill, m.now().Add(-RunRetention).Unix(), limit)
 	if err != nil {
@@ -64,9 +64,11 @@ func (m *Module) readRecent(ctx context.Context, drill, player string, limit int
 		var entry Entry
 		var playerID, clientID string
 		var stamp int64
-		if err = rows.Scan(&playerID, &entry.PlayerRef, &entry.DisplayName, &clientID, &entry.Score, &entry.Source, &entry.Platform, &entry.DeviceLabel, &stamp); err != nil {
+		var avatar sql.NullString
+		if err = rows.Scan(&playerID, &entry.PlayerRef, &entry.DisplayName, &clientID, &entry.Score, &entry.Source, &entry.Platform, &entry.DeviceLabel, &stamp, &avatar); err != nil {
 			return Board{}, err
 		}
+		entry.Avatar = players.StoredAvatar(avatar)
 		entry.PlayerShort = players.Short(playerID)
 		entry.DisplayName = players.Display(entry.DisplayName)
 		entry.CreatedAt = time.Unix(stamp, 0).UTC().Format(time.RFC3339)

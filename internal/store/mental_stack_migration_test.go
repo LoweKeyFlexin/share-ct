@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"testing"
 	"testing/fstest"
-
-	"github.com/LoweKeyFlexin/share-ct/migrations"
 )
 
 func TestMentalStackMigrationPreservesExistingDataIdentityAndCascades(t *testing.T) {
@@ -22,6 +20,14 @@ func TestMentalStackMigrationPreservesExistingDataIdentityAndCascades(t *testing
 	}
 	if _, err := s.Migrate(ctx, old); err != nil {
 		t.Fatal(err)
+	}
+	// The upgrade under test is 010 alone; later migrations have their own tests.
+	upTo10 := fstest.MapFS{}
+	for _, m := range embedded(t) {
+		if m.Version <= 10 {
+			name := fmt.Sprintf("%03d_%s.sql", m.Version, m.Name)
+			upTo10[name] = &fstest.MapFile{Data: migrationBytes(t, name)}
+		}
 	}
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -75,7 +81,7 @@ func TestMentalStackMigrationPreservesExistingDataIdentityAndCascades(t *testing
 	for _, table := range []string{"players", "submissions", "reports", "drill_bests", "drill_runs", "drill_receipts"} {
 		before[table] = snapshot(table)
 	}
-	result, err := s.Migrate(ctx, migrations.FS)
+	result, err := s.Migrate(ctx, upTo10)
 	if err != nil || result.Applied != 1 || result.From != 9 || result.To != 10 {
 		t.Fatalf("upgrade %+v: %v", result, err)
 	}
@@ -84,7 +90,7 @@ func TestMentalStackMigrationPreservesExistingDataIdentityAndCascades(t *testing
 			t.Fatalf("migration changed %s: before %s after %s", table, expected, got)
 		}
 	}
-	if result, err := s.Migrate(ctx, migrations.FS); err != nil || result.Applied != 0 {
+	if result, err := s.Migrate(ctx, upTo10); err != nil || result.Applied != 0 {
 		t.Fatalf("restart %+v: %v", result, err)
 	}
 	exec(`INSERT INTO drill_bests(player_id,drill_id,client_id,score,source,app_build,platform,device_model,device_label,created_at)

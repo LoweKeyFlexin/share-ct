@@ -40,6 +40,9 @@ type Entry struct {
 	DeviceLabel string `json:"device_label"`
 	CreatedAt   string `json:"created_at"`
 	RunRef      string `json:"run_ref,omitempty"`
+	// Avatar is the player's current board avatar descriptor, or null
+	// (controller-tester-fgc#7853).
+	Avatar *string `json:"avatar"`
 }
 type Board struct {
 	DrillID   string  `json:"drill_id"`
@@ -249,7 +252,7 @@ func (m *Module) saveWithIntent(ctx context.Context, player string, req Request,
 
 const rankedSQL = `WITH ranked AS (SELECT b.*,ROW_NUMBER() OVER(ORDER BY b.score DESC,b.created_at ASC,b.id ASC) AS rank,
  count(*) OVER() AS board_size FROM drill_bests b WHERE b.drill_id=?)
- SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size
+ SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,p.avatar
  FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
 
 func (m *Module) read(ctx context.Context, drill, player string, limit int) (Board, error) {
@@ -263,9 +266,11 @@ func (m *Module) read(ctx context.Context, drill, player string, limit int) (Boa
 		var e Entry
 		var pid string
 		var stamp int64
-		if err = rows.Scan(&e.Rank, &pid, &e.PlayerRef, &e.DisplayName, &e.Score, &e.Source, &e.Platform, &e.DeviceLabel, &stamp, &b.BoardSize); err != nil {
+		var avatar sql.NullString
+		if err = rows.Scan(&e.Rank, &pid, &e.PlayerRef, &e.DisplayName, &e.Score, &e.Source, &e.Platform, &e.DeviceLabel, &stamp, &b.BoardSize, &avatar); err != nil {
 			return b, err
 		}
+		e.Avatar = players.StoredAvatar(avatar)
 		e.DisplayName = players.Display(e.DisplayName)
 		e.PlayerShort = players.Short(pid)
 		e.CreatedAt = time.Unix(stamp, 0).UTC().Format(time.RFC3339)

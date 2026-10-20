@@ -84,6 +84,7 @@ func (m *Module) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/players", m.create)
 	mux.HandleFunc("GET /v1/players/{id}", m.get)
 	mux.Handle("PATCH /v1/players/{id}", m.RequireBearer(requireOwner(http.HandlerFunc(m.rename))))
+	mux.Handle("PUT /v1/players/{id}/avatar", m.RequireBearer(requireOwner(http.HandlerFunc(m.setAvatar))))
 	mux.Handle("DELETE /v1/players/{id}", m.requireExists(m.RequireBearer(requireOwner(http.HandlerFunc(m.erase)))))
 }
 

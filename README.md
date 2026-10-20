@@ -114,6 +114,7 @@ player's id.
 | `POST /v1/players` | – | `201 {player_id, token}` |
 | `GET /v1/players/{id}` | – | `200 {player_id, player_short, display_name, platform, best:{touch,pad,keyboard}, submissions, created_at}` |
 | `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
+| `PUT /v1/players/{id}/avatar` | bearer, own id | body `{"avatar": "<descriptor>" \| null}`; `200 {avatar}` with what was stored. The descriptor is ids only, never an image: `1:<fighter>:<outfit 1-9>:<color 0-9>[:<gear>[,<gear>…]]`, ids `[a-z0-9-]{1,32}`, at most 4 gear, at most 64 bytes. Anything else is stored as null, never an error. Board rows (`GET /v1/board`, `/v1/recent`, `/v1/drills/board`) carry the player's current `avatar` or null. |
 | `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased; `404` when the id is unknown, an already-erased player included, which the app treats as finished too |
 | `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
 | `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_ref, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
