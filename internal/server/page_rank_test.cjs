@@ -55,7 +55,7 @@ test('empty Drills Recent offers existing Top records without changing other emp
 // checked in Chrome; this pins who owns identity, score and full metadata.
 test('card metadata owns readable sibling lines outside the identity and score columns', () => {
   class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.className = ''; this.text = ''; }
+    constructor(tag) { this.tag = tag; this.children = []; this.className = ''; this.text = ''; this.style = {setProperty() {}}; }
     set textContent(value) { this.text = String(value); this.children = []; }
     get textContent() { return this.text + this.children.map(child => child.textContent).join(''); }
     appendChild(child) { this.children.push(child); child.parent = this; return child; }
@@ -72,6 +72,7 @@ test('card metadata owns readable sibling lines outside the identity and score c
     assert.equal(metadata.parent,summary);
     assert.equal(find(card,'who').parent,summary);
     assert.equal(find(card,'big').parent,summary);
+    assert.equal(find(card,'av').parent,summary); // the headshot tile sits in the summary row
     assert.equal(find(card,'device-identity').parent,metadata);
     assert.equal(find(card,'entry-date').parent,metadata);
     assert.equal(find(card,'device-label').textContent,label);

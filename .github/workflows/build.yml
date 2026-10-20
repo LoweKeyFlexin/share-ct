@@ -55,7 +55,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --test internal/server/page_rank_test.cjs
+      - run: node --test internal/server/page_rank_test.cjs internal/server/page_avatar_test.cjs
       - name: Cross-compiles for the Pi without cgo
         run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /dev/null ./cmd/sharect
 
@@ -154,10 +154,15 @@ jobs:
           # Assert what the page IS, not one exact string of its copy. This pinned the old
           # <title> and went red on the first change to it, then stayed red through five more
           # pushes while the image shipped anyway. A check nobody reads is worse than none.
-          echo "$page" | grep -qF 'Share CT'
-          echo "$page" | grep -qF 'BETA · MAY GO DOWN'
-          echo "$page" | grep -qE 'Ver \.[0-9]+'
-          echo "$page" | grep -q '/v1/board?source='
+          # Here-strings, not `echo | grep -q`: grep -q exits at its first match, and once
+          # the page outgrew one pipe write, echo took SIGPIPE and pipefail failed the step.
+          grep -qF 'Share CT' <<<"$page"
+          grep -qF 'BETA · MAY GO DOWN' <<<"$page"
+          grep -qE 'Ver \.[0-9]+' <<<"$page"
+          grep -q '/v1/board?source=' <<<"$page"
+          # The board-avatar art the page names is served.
+          art=$(grep -oE '/assets/board-avatars-[0-9a-f]+\.json' <<<"$page" | head -1)
+          curl -fsS "localhost:8080$art" | jq -e '.fighters.puppet.head | length > 0' >/dev/null
 
           code=$(curl -sS -o /dev/null -w '%{http_code}' localhost:8080/nope)
           [ "$code" = 404 ] || { echo "::error::GET /nope returned $code, want 404"; exit 1; }

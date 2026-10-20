@@ -5,13 +5,14 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // boardScript is the whole client: it fetches /v1/board and builds rows with
 // createElement/textContent, never innerHTML, so a display name can't become markup.
 // Its sha256 is the only script the CSP admits, so the page stays one self-contained
 // document with no external assets.
-const boardScript = `(function () {
+const boardScriptSource = `(function () {
   'use strict';
   var FRAME_MS = 1000 / 60;
   // One view, not a source crossed with a sort. The three the page offers are RECENT (the
@@ -151,6 +152,108 @@ const boardScript = `(function () {
     return svg;
   }
 
+  // Board avatars: the same headshot the app draws beside each name. A row carries only a
+  // short descriptor of ids (fighter, outfit, colour, gear, bonus look); the art is one
+  // static file of vector paths baked from the app's fighter art, fetched once and cached.
+  // Never an image, and nothing a player typed reaches it: ids select from that file.
+  var AVATARS_URL = '__AVATARS_URL__';
+  var avatarArt = null;          // the baked file, once loaded
+  var avatarWaiting = [];        // tiles drawn before it arrived
+  var DEFAULT_LOOK = { body: 'puppet', fill: [255, 159, 10], outline: null, hat: false };
+  var EX01 = { id: 'bonus-ex01', fill: [100, 210, 255], outline: [255, 201, 60] };
+  var AVATAR_V1 = /^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$/;
+  var AVATAR_V2 = /^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$/;
+
+  // The app's fallbacks (CTBoardAvatar.look): no descriptor, a malformed one or an unknown
+  // fighter draw Standard in Player Two Orange; a colour index past the palette draws the
+  // first colour; unknown gear is dropped; a bonus look the fighter does not have is ignored.
+  function avatarLook(raw, art) {
+    if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw))) return DEFAULT_LOOK;
+    var f = raw.split(':');
+    var fighter = art && art.fighters[f[1]];
+    if (!fighter) return DEFAULT_LOOK;
+    var colour = fighter.palette[Number(f[3])] || fighter.palette[0];
+    var gear = f[4] ? f[4].split(',') : [];
+    var look = { body: f[1], fill: colour, outline: null, hat: gear.indexOf('pirate-hat') >= 0 && !!(fighter.hat && fighter.hat.length) };
+    if (f[0] === '2' && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0) {
+      look.fill = EX01.fill; look.outline = EX01.outline;
+    }
+    return look;
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var avatarDefs = null;
+  // One <symbol> per fighter (and per fighter + hat), built once from the baked markup.
+  // The markup is our own static file, never player data.
+  function avatarSymbol(body, hat) {
+    var id = 'av-' + body + (hat ? '-hat' : '');
+    if (document.getElementById(id)) return id;
+    var f = avatarArt.fighters[body];
+    var head = (hat ? f.hat : f.head).slice();
+    var markup = f.parts.map(function (part) { return part === '' ? head.shift() : part; }).join('')
+      .split('{id}').join(id + '-');
+    var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + markup + '</svg>', 'image/svg+xml');
+    var symbol = document.createElementNS(SVG_NS, 'symbol');
+    symbol.setAttribute('id', id);
+    symbol.setAttribute('viewBox', '0 0 ' + f.box[2] + ' ' + f.box[2]);
+    Array.prototype.slice.call(doc.documentElement.childNodes).forEach(function (n) {
+      symbol.appendChild(document.importNode(n, true));
+    });
+    if (!avatarDefs) {
+      avatarDefs = document.createElementNS(SVG_NS, 'svg');
+      avatarDefs.setAttribute('aria-hidden', 'true');
+      avatarDefs.setAttribute('class', 'av-defs');
+      document.body.appendChild(avatarDefs);
+    }
+    avatarDefs.appendChild(symbol);
+    return id;
+  }
+
+  function rgb(c, k) {
+    return 'rgb(' + Math.round(c[0] * k) + ',' + Math.round(c[1] * k) + ',' + Math.round(c[2] * k) + ')';
+  }
+
+  // Tints exactly as the app does: each path's colour is its green level times the player
+  // colour; draw layers 0 and 1 (key and line) take the outline colour when a two-tone
+  // bonus look has one.
+  function paintAvatar(tile, raw) {
+    var look = avatarLook(raw, avatarArt);
+    tile.style.setProperty('--c', rgb(look.fill, 1));
+    if (!avatarArt || !avatarArt.fighters[look.body]) return;
+    var f = avatarArt.fighters[look.body];
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + f.box[2] + ' ' + f.box[2]);
+    svg.setAttribute('aria-hidden', 'true');
+    f.levels.forEach(function (level, i) {
+      svg.style.setProperty('--m' + i, rgb(look.fill, level));
+      svg.style.setProperty('--o' + i, rgb(look.outline || look.fill, level));
+    });
+    var use = document.createElementNS(SVG_NS, 'use');
+    use.setAttribute('href', '#' + avatarSymbol(look.body, look.hat));
+    svg.appendChild(use);
+    tile.textContent = '';
+    tile.appendChild(svg);
+  }
+
+  function avatarTile(raw, large) {
+    var tile = el('span', large ? 'av lg' : 'av');
+    tile.setAttribute('aria-hidden', 'true');
+    if (avatarArt) { paintAvatar(tile, raw); }
+    else { tile.style.setProperty('--c', rgb(DEFAULT_LOOK.fill, 1)); avatarWaiting.push([tile, raw]); }
+    return tile;
+  }
+
+  function loadAvatarArt() {
+    fetch(AVATARS_URL).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (art) {
+        if (!art || !art.fighters) return;
+        avatarArt = art;
+        avatarWaiting.forEach(function (w) { try { paintAvatar(w[0], w[1]); } catch (e) {} });
+        avatarWaiting = [];
+      })
+      .catch(function () { avatarWaiting = []; });   // the tiles stay as plain tinted squares
+  }
+
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
@@ -176,6 +279,8 @@ const boardScript = `(function () {
     // A feed has no standings, so no rank number and no medals: position here is only
     // "how recently", and numbering it would read as a placing.
     head.appendChild(el('span', 'rk', feed ? '·' : String(e.rank)));
+    // #1 on a ranked board gets the larger headshot, as in the app (52 vs 40).
+    head.appendChild(avatarTile(e.avatar, !feed && e.rank === 1));
 
     var who = el('div', 'who');
     var identity = el('div', 'player-identity');
@@ -322,10 +427,15 @@ const boardScript = `(function () {
     });
     load();
   });
+  loadAvatarArt();
   load();
   setInterval(function () { if (state.view === 'recent' && !document.hidden) load(); }, 15000);
 })();
 `
+
+// boardScript is boardScriptSource with the avatar file's content-addressed URL filled in,
+// so a new bake is a new URL and the old one can be cached forever.
+var boardScript = strings.Replace(boardScriptSource, "__AVATARS_URL__", avatarsURL, 1)
 
 // scriptHash is the CSP hash source for boardScript.
 var scriptHash = func() string {
@@ -338,7 +448,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".24"
+const pageVersion = ".26"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -356,6 +466,7 @@ const indexHead = `<!doctype html>
     --gold:#FFC93C; --silver:#C9D2E0; --bronze:#D08A4E;
     --t-legend:#FFF1B8; --t-ultimate:#E2A9FF; --t-highmaster:#B467FF; --t-master:#8A7CFF;
     --t-diamond:#7FE3FF; --t-platinum:#7CF2D6; --t-rookie:#8A93A6;
+    --cell:#2C1F42;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -381,14 +492,25 @@ const indexHead = `<!doctype html>
      more and doesn't make the leaderboard selection take up so much of the app." */
   .board { list-style:none; margin:0; padding:0 .75rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
   .row { border:1px solid var(--line); border-radius:.6rem; background:var(--well); overflow:hidden; }
-  .row > summary { display:grid; grid-template-columns:1.4rem minmax(0,1fr) auto .5rem;
-                   grid-template-areas:"rank identity score disclosure" ". metadata metadata .";
+  .row > summary { display:grid; grid-template-columns:1.4rem auto minmax(0,1fr) auto .5rem;
+                   grid-template-areas:"rank avatar identity score disclosure" ". avatar metadata metadata .";
                    align-items:start; column-gap:.65rem; row-gap:.35rem; padding:.7rem .85rem; cursor:pointer; list-style:none; }
   .row > summary::-webkit-details-marker { display:none; }
   .row > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:-2px; }
   .row:hover { border-color:var(--line2); }
   .rk { grid-area:rank; font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { grid-area:identity; min-width:0; }
+  /* The app's headshot tile (CTBoardAvatarView): the cell, then the player colour at 26%
+     fading to clear by 0.573 x the side from (50%, 38%), then a 1 px inset ring of the line
+     colour with the colour at 45% over it. Radius 10 at 40 px, 12 at 52 px. No other glow. */
+  .av { grid-area:avatar; align-self:start; display:block; width:40px; height:40px; border-radius:10px; overflow:hidden;
+        --av-reach:22.92px;
+        background-color:var(--cell);
+        background-image:radial-gradient(circle var(--av-reach) at 50% 38%, color-mix(in srgb, var(--c) 26%, transparent), transparent);
+        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 0 1px var(--line); }
+  .av.lg { width:52px; height:52px; border-radius:12px; --av-reach:29.8px; }
+  .av svg { display:block; width:100%; height:100%; }
+  .av-defs { position:absolute; width:0; height:0; overflow:hidden; }
   .player-identity { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
   .player-id { display:inline-flex; align-items:center; gap:4px; font: .65rem var(--mono); color:var(--mute); }
   .player-id .platform-glyph { width:10px; height:10px; flex-basis:10px; }
