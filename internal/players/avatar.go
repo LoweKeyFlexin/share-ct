@@ -19,11 +19,17 @@ const MaxAvatarBytes = 64
 // as its default and drops unknown gear. Nothing in this grammar can carry free text.
 var avatarV1 = regexp.MustCompile(`^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$`)
 
+// avatarV2 appends one field, a limited bonus look worn as is (two-tone EX01):
+// version:fighter:outfit:color:gear,...:look. It always has six fields; the gear field is
+// always present and may be empty ("2:puppet:1:0::bonus-ex01"). The look is an id like
+// every other field, so the grammar still cannot carry free text.
+var avatarV2 = regexp.MustCompile(`^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$`)
+
 // NormalizeAvatar returns the descriptor to store, or nil. Anything that is not a valid
-// version-1 descriptor (wrong shape, unknown version, oversize) becomes nil: "no avatar",
+// version-1 or version-2 descriptor (wrong shape, unknown version, oversize) becomes nil: "no avatar",
 // never an error, so a newer or broken client degrades to the default picture.
 func NormalizeAvatar(raw *string) *string {
-	if raw == nil || len(*raw) > MaxAvatarBytes || !avatarV1.MatchString(*raw) {
+	if raw == nil || len(*raw) > MaxAvatarBytes || !(avatarV1.MatchString(*raw) || avatarV2.MatchString(*raw)) {
 		return nil
 	}
 	v := *raw

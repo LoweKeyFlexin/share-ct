@@ -32,6 +32,7 @@ func New(log *slog.Logger, db *store.Store, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /healthz", handleHealthz(log, db.Ping))
+	mux.HandleFunc("GET /assets/{name}", handleAvatars)
 
 	scores := leaderboard.NewStore(db.DB(), now)
 	pl := players.New(log, db.DB(), now, scores)
