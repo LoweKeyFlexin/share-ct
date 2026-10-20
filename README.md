@@ -371,3 +371,22 @@ independent. Retry receipts remain capped at 100/player; retained run rows also
 preserve retry proof after that ring rolls over. `DELETE /v1/players/{id}` cascades
 through the feed, bests, receipts and reports. Authentication against an erased
 identity cannot recreate its data. Reaction tables and endpoints are unchanged.
+
+## Board avatars (website)
+
+Board rows carry the player's avatar descriptor (`1:<fighter>:<outfit>:<color>[:<gear>,…]` or
+`2:<fighter>:<outfit>:<color>:<gear,…>:<look>`, at most 64 bytes; anything else is stored and
+served as null). The website draws it as the app does, from
+`internal/server/static/board-avatars.json`: per fighter, its palette and one compact set of
+SVG paths cut to the app's headshot crop, with and without the pirate hat. No images. The page
+fetches it once from a content-addressed `/assets/board-avatars-<hash>.json` (cached immutably).
+
+Regenerate it when the fighter-engine-kit pin, the pirate-hat art, the roster or the colour
+catalog changes in the app repo (both sources are private; only the baked paths land here):
+
+```sh
+go run ./cmd/avatarbake -kit <fighter-engine-kit checkout> -fgc <controller-tester-fgc checkout>
+CT_KIT=<kit> CT_FGC=<fgc> go test ./internal/avatarart   # the committed file matches the sources
+```
+
+The crop constants live in one place, `internal/avatarart/bake.go`.
