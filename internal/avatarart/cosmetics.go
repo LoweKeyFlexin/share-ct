@@ -1,6 +1,7 @@
 package avatarart
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,10 @@ type kitGearDoc struct {
 	Replaces []string                                 `json:"replaces"`
 	Bodies   map[string]map[string]gearArt            `json:"bodies"`
 	Outfits  map[string]map[string]map[string]gearArt `json:"outfits"`
+	// FixedTint marks gear drawn in its own colour (the Mind Crown, kit #77). The bake tints
+	// every part with the fighter colour, so such an item is skipped until it draws its fixed
+	// colour here too; the app does not award it before then (controller-tester-fgc#7853).
+	FixedTint *json.RawMessage `json:"fixed_tint"`
 }
 
 // headGear is one item's head art on one body for one outfit, with the vectors it reads.
@@ -86,6 +91,9 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 		var doc kitGearDoc
 		if err := readJSON(at(g.Resource), &doc); err != nil {
 			return err
+		}
+		if doc.FixedTint != nil {
+			continue
 		}
 		dir := filepath.Dir(at(g.Resource))
 		load := func(art map[string]gearArt) (*headGear, error) {
