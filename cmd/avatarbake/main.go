@@ -1,8 +1,13 @@
 // Command avatarbake regenerates internal/server/static/board-avatars.json, the website's
 // board-avatar headshots, from the fighter art the app ships. Run it whenever the kit pin,
-// the pirate-hat art, the roster or the colour catalog changes:
+// the pirate-hat art, the kit's cosmetics (Outfit 2, helmets), the roster or the colour catalog
+// changes:
 //
-//	go run ./cmd/avatarbake -kit <fighter-engine-kit checkout> -fgc <controller-tester-fgc checkout>
+//	go run ./cmd/avatarbake -kit <fighter-engine-kit checkout> -fgc <controller-tester-fgc checkout> \
+//	    [-cosmetics <kit checkout>/PuppetPresentation/Resources/PuppetPresentation/cosmetics]
+//
+// -cosmetics lets Outfit 2 and the helmets come from a newer kit export than the bodies, so
+// the Outfit 1 art stays exactly what the app ships while the outfit art lands.
 //
 // Both sources are private repositories; only the baked headshot paths land here.
 package main
@@ -21,16 +26,21 @@ func main() {
 	kit := flag.String("kit", "", "fighter-engine-kit checkout (the revision fgc's Package.resolved pins)")
 	fgc := flag.String("fgc", "", "controller-tester-fgc checkout")
 	out := flag.String("out", "internal/server/static/board-avatars.json", "output file")
+	cosmetics := flag.String("cosmetics", "", "the kit's exported cosmetics folder (default: <kit>/PuppetPresentation/Resources/PuppetPresentation/cosmetics)")
 	flag.Parse()
 	if *kit == "" || *fgc == "" {
 		flag.Usage()
 		os.Exit(2)
+	}
+	if *cosmetics == "" {
+		*cosmetics = filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics")
 	}
 	data, err := avatarart.BakeJSON(avatarart.Inputs{
 		KitResources: filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation"),
 		GearDir:      filepath.Join(*fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
 		Roster:       filepath.Join(*fgc, "CTCore/FighterRoster.swift"),
 		Colours:      filepath.Join(*fgc, "CTCore/DrillsColourCatalog.swift"),
+		Cosmetics:    *cosmetics,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "avatarbake:", err)
