@@ -43,11 +43,16 @@ func publicRunRef(playerRef, clientID string) string {
 }
 
 func (m *Module) readRecent(ctx context.Context, drill, player string, limit int) (Board, error) {
+	return m.readRecentSince(ctx, drill, player, limit, 0)
+}
+
+// readRecentSince is the Recent feed; since > 0 limits it (and Own's standing) to the window.
+func (m *Module) readRecentSince(ctx context.Context, drill, player string, limit int, since int64) (Board, error) {
 	if err := PruneExpired(ctx, m.db, m.now()); err != nil {
 		return Board{}, err
 	}
-	// Own retains the actual all-time standing; the feed itself has no ranking.
-	board, err := m.read(ctx, drill, player, 1)
+	// Own retains the board's standing (all-time, or in the window); the feed has no ranking.
+	board, err := m.readSince(ctx, drill, player, 1, since)
 	if err != nil {
 		return Board{}, err
 	}
@@ -55,7 +60,7 @@ func (m *Module) readRecent(ctx context.Context, drill, player string, limit int
 	board.Entries = []Entry{}
 	rows, err := m.db.QueryContext(ctx, `SELECT p.id,p.player_ref,p.display_name,r.client_id,r.score,r.source,r.platform,r.device_label,r.created_at,p.avatar
  FROM drill_runs r JOIN players p ON p.id=r.player_id WHERE r.drill_id=? AND r.created_at>=?
- ORDER BY r.created_at DESC,r.id DESC LIMIT ?`, drill, m.now().Add(-RunRetention).Unix(), limit)
+ ORDER BY r.created_at DESC,r.id DESC LIMIT ?`, drill, max(since, m.now().Add(-RunRetention).Unix()), limit)
 	if err != nil {
 		return Board{}, err
 	}

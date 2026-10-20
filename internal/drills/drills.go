@@ -50,7 +50,28 @@ type Board struct {
 	Own       *Entry  `json:"own"`
 	BoardSize int     `json:"board_size"`
 	Sort      string  `json:"sort,omitempty"`
+	// Window is "30d" on a board limited to the last 30 days; absent on the all-time board,
+	// so the default response keeps its old shape (controller-tester-fgc#7853).
+	Window string `json:"window,omitempty"`
 }
+
+// WindowDays is the one limited period a board offers: the last 30 days (Aaron, 2026-10-20:
+// "Add 30D to drill boards").
+const WindowDays = 30
+
+// windowedSQL ranks each player's best score in the window. Its pool is both stores: runs
+// published to the Recent feed and the all-time bests set inside the window, so a player who
+// never opted into the feed still appears with the best they set in the last 30 days.
+const windowedSQL = `WITH pool AS (
+ SELECT player_id,score,source,platform,device_label,created_at,id FROM drill_runs WHERE drill_id=? AND created_at>=?
+ UNION ALL
+ SELECT player_id,score,source,platform,device_label,created_at,id FROM drill_bests WHERE drill_id=? AND created_at>=?),
+ best AS (SELECT pool.*,ROW_NUMBER() OVER(PARTITION BY player_id ORDER BY score DESC,created_at ASC,id ASC) AS pick FROM pool),
+ ranked AS (SELECT b.*,ROW_NUMBER() OVER(ORDER BY b.score DESC,b.created_at ASC,b.id ASC) AS rank,
+ count(*) OVER() AS board_size FROM best b WHERE b.pick=1)
+ SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,p.avatar
+ FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
+
 type Receipt struct {
 	SubmissionID int64 `json:"submission_id"`
 	Rank         int   `json:"rank"`
@@ -256,8 +277,19 @@ const rankedSQL = `WITH ranked AS (SELECT b.*,ROW_NUMBER() OVER(ORDER BY b.score
  FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
 
 func (m *Module) read(ctx context.Context, drill, player string, limit int) (Board, error) {
+	return m.readSince(ctx, drill, player, limit, 0)
+}
+
+// readSince is the Top board; since > 0 limits it to scores set at or after that Unix time.
+func (m *Module) readSince(ctx context.Context, drill, player string, limit int, since int64) (Board, error) {
 	b := Board{DrillID: drill, Entries: []Entry{}}
-	rows, err := m.db.QueryContext(ctx, rankedSQL, drill, limit, player)
+	var rows *sql.Rows
+	var err error
+	if since > 0 {
+		rows, err = m.db.QueryContext(ctx, windowedSQL, drill, since, drill, since, limit, player)
+	} else {
+		rows, err = m.db.QueryContext(ctx, rankedSQL, drill, limit, player)
+	}
 	if err != nil {
 		return b, err
 	}
@@ -296,6 +328,15 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteBadRequest(w, "sort")
 		return
 	}
+	window := q.Get("window")
+	if window != "" && window != "all" && window != "30d" {
+		httpx.WriteBadRequest(w, "window")
+		return
+	}
+	var since int64
+	if window == "30d" {
+		since = m.now().Add(-WindowDays * 24 * time.Hour).Unix()
+	}
 	limit := 50
 	if raw := q.Get("limit"); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -318,13 +359,16 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		if limit > 50 {
 			limit = 50
 		}
-		b, err = m.readRecent(r.Context(), drill, player, limit)
+		b, err = m.readRecentSince(r.Context(), drill, player, limit, since)
 	} else {
-		b, err = m.read(r.Context(), drill, player, limit)
+		b, err = m.readSince(r.Context(), drill, player, limit, since)
 	}
 	if err != nil {
 		httpx.WriteError(w, 500, "internal")
 		return
+	}
+	if since > 0 {
+		b.Window = "30d"
 	}
 	httpx.WriteJSON(w, 200, b)
 }
