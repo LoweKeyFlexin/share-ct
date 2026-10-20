@@ -11,7 +11,8 @@ const context = vm.createContext({});
 vm.runInContext(source.slice(start, end) + '\nthis.avatarLook = avatarLook; this.DEFAULT_LOOK = DEFAULT_LOOK;', context);
 
 const art = { fighters: {
-  'puppet': { palette: [[100,210,255],[124,242,166]], bonus: ['bonus-ex01'], hat: ['<g/>'] },
+  'puppet': { palette: [[100,210,255],[124,242,166]], bonus: ['bonus-ex01'], hat: ['<g/>'],
+    gear: { 'scouter-visor': ['<s/>'], 'switch-cap': ['<c/>'] } },
   'puppet-oni': { palette: [[200,32,42],[90,40,120]], hat: ['<g/>'] },
   'puppet-nohat': { palette: [[1,2,3]] },
   'puppet-ronin': { palette: [[131,138,234],[1,1,1]], hat: ['<g/>'], gear: { 'knight-helmet': ['<k/>'] },
@@ -54,4 +55,13 @@ test('outfit 2 draws its own colours and gear; an outfit without art, or a bonus
   assert.deepEqual(look('1:puppet-ronin:1:0:knight-helmet'), { body:'puppet-ronin', outfit:'1', gear:'knight-helmet', fill:[131,138,234], outline:null, hat:false });
   assert.deepEqual(look('1:puppet-oni:2:1'), { body:'puppet-oni', outfit:'1', gear:null, fill:[90,40,120], outline:null, hat:false });
   assert.equal(look('2:puppet:2:0::bonus-ex01').outfit, '1');
+});
+
+// #7853: gear shows when this file has art for it, so newly baked hats (Ver .36) appear with no
+// list in the page to update; EX01 keeps its hat.
+test('any baked head gear shows, EX01 included; the first id with art wins', () => {
+  assert.deepEqual(look('1:puppet:1:0:scouter-visor'), { body:'puppet', outfit:'1', gear:'scouter-visor', fill:[100,210,255], outline:null, hat:false });
+  assert.deepEqual(look('2:puppet:1:0:switch-cap:bonus-ex01'), { body:'puppet', outfit:'1', gear:'switch-cap', fill:[100,210,255], outline:[255,201,60], hat:false });
+  assert.equal(look('1:puppet:1:0:top-hat,scouter-visor').gear, 'scouter-visor');
+  assert.equal(look('1:puppet:1:0:crash-helmet').gear, null); // no art for it in this fixture
 });

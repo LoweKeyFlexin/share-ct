@@ -160,8 +160,6 @@ const boardScriptSource = `(function () {
   var avatarArt = null;          // the baked file, once loaded
   var avatarWaiting = [];        // tiles drawn before it arrived
   var DEFAULT_LOOK = { body: 'puppet', outfit: '1', gear: null, fill: [255, 159, 10], outline: null, hat: false };
-  // The app's head gear ids, in the order it reads them (CTBoardAvatar.look: the first head item).
-  var HEAD_GEAR = ['pirate-hat', 'knight-helmet', 'diving-helmet'];
   var EX01 = { id: 'bonus-ex01', fill: [100, 210, 255], outline: [255, 201, 60] };
   var AVATAR_V1 = /^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$/;
   var AVATAR_V2 = /^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$/;
@@ -189,8 +187,12 @@ const boardScriptSource = `(function () {
     var outfit = !bonus && f[2] !== '1' && fighter.outfits && fighter.outfits[f[2]] ? f[2] : '1';
     var src = outfit === '1' ? fighter : fighter.outfits[outfit];
     var colour = src.palette[Number(f[3])] || src.palette[0];
-    var ids = (f[4] ? f[4].split(',') : []).filter(function (id) { return HEAD_GEAR.indexOf(id) >= 0; });
-    var gear = ids.length && gearHead(src, ids[0]) ? ids[0] : null;
+    // The first gear id this file has head art for (every baked item is head gear), so new
+    // gear shows as soon as it is baked, with no list here to fall behind (#7853: the Scouter
+    // Visor, Crash Helmet and Switch Cap were baked into Ver .36 but this list still had three).
+    var ids = f[4] ? f[4].split(',') : [];
+    var gear = null;
+    for (var i = 0; i < ids.length && !gear; i++) { if (gearHead(src, ids[i])) gear = ids[i]; }
     var look = { body: f[1], outfit: outfit, gear: gear, fill: colour, outline: null, hat: gear === 'pirate-hat' };
     if (bonus) { look.fill = EX01.fill; look.outline = EX01.outline; }
     return look;
@@ -467,7 +469,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".36"
+const pageVersion = ".37"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
