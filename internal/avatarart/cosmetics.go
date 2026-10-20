@@ -1,7 +1,6 @@
 package avatarart
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,16 +45,32 @@ type kitGearDoc struct {
 	Replaces []string                                 `json:"replaces"`
 	Bodies   map[string]map[string]gearArt            `json:"bodies"`
 	Outfits  map[string]map[string]map[string]gearArt `json:"outfits"`
-	// FixedTint marks gear drawn in its own colour (the Mind Crown, kit #77). The bake tints
-	// every part with the fighter colour, so such an item is skipped until it draws its fixed
-	// colour here too; the app does not award it before then (controller-tester-fgc#7853).
-	FixedTint *json.RawMessage `json:"fixed_tint"`
+	// FixedTint is gear drawn in its own colour (the Mind Crown, kit #77): inside TintMasks the
+	// head slots take Hex instead of the player colour, with a soft halo when Glow is set, as the
+	// app draws it (controller-tester-fgc#7853).
+	FixedTint *struct {
+		Hex  string `json:"hex"`
+		Glow bool   `json:"glow"`
+	} `json:"fixed_tint"`
+	TintMasks *struct {
+		Bodies  map[string]gearArt            `json:"bodies"`
+		Outfits map[string]map[string]gearArt `json:"outfits"`
+	} `json:"tint_masks"`
+}
+
+// fixedSpec is a fixed-tint item's colour and its mask on one body and outfit.
+type fixedSpec struct {
+	rgb  [3]int
+	glow bool
+	mask VecSlot
 }
 
 // headGear is one item's head art on one body for one outfit, with the vectors it reads.
 type headGear struct {
 	art map[string]gearArt
 	vec vecDoc
+	// fixed is set for gear drawn in its own colour (nil = the player colour).
+	fixed *fixedSpec
 	// key reads a slot's vector key from its image path (the kit keys gear by file name).
 	key func(image string) string
 }
@@ -92,9 +107,6 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 		if err := readJSON(at(g.Resource), &doc); err != nil {
 			return err
 		}
-		if doc.FixedTint != nil {
-			continue
-		}
 		dir := filepath.Dir(at(g.Resource))
 		load := func(art map[string]gearArt) (*headGear, error) {
 			if len(art) == 0 {
@@ -111,9 +123,46 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 			}
 			return &headGear{art: art, vec: vec, key: byName}, nil
 		}
+		// fixed reads the item's mask for this outfit's art from the art's own vector document.
+		fixed := func(h *headGear, mask *gearArt) error {
+			if h == nil || doc.FixedTint == nil {
+				return nil
+			}
+			if mask == nil {
+				return fmt.Errorf("%s: fixed_tint without a mask for %s", g.ID, body)
+			}
+			rgb, err := hexRGB(doc.FixedTint.Hex)
+			if err != nil {
+				return err
+			}
+			v, ok := h.vec.Slots[byName(mask.Image)]
+			if !ok {
+				return fmt.Errorf("%s: no vector art for %s", g.ID, mask.Image)
+			}
+			h.fixed = &fixedSpec{rgb: rgb, glow: doc.FixedTint.Glow, mask: v}
+			return nil
+		}
+		maskFor := func(outfit string) *gearArt {
+			if doc.TintMasks == nil {
+				return nil
+			}
+			if outfit == "" {
+				if m, ok := doc.TintMasks.Bodies[body]; ok {
+					return &m
+				}
+				return nil
+			}
+			if m, ok := doc.TintMasks.Outfits[outfit][body]; ok {
+				return &m
+			}
+			return nil
+		}
 		gearFor[g.ID] = map[string]*headGear{}
 		h, err := load(doc.Bodies[body])
 		if err != nil {
+			return err
+		}
+		if err := fixed(h, maskFor("")); err != nil {
 			return err
 		}
 		if h != nil {
@@ -121,6 +170,9 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 		}
 		for outfit, bodies := range doc.Outfits {
 			if h, err = load(bodies[body]); err != nil {
+				return err
+			}
+			if err := fixed(h, maskFor(outfit)); err != nil {
 				return err
 			}
 			if h != nil {
@@ -171,6 +223,11 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 				return v, outfitVec.RasterPixelsPerDesignUnit, ok
 			}
 			return bareArt(s)
+		}
+		// Fixed-tint gear (the Mind Crown) draws its head slots in its own colour inside the mask.
+		if g != nil {
+			w.fixed = g.fixed
+			defer func() { w.fixed = nil }()
 		}
 		return w.parts(p, art)
 	}

@@ -764,6 +764,9 @@ type writer struct {
 	// the shared markup.
 	clipPrefix string
 	clipN      map[string]int
+	// fixed is the gear being drawn when it has its own colour (the Mind Crown): its head
+	// slots get a second, mask-clipped copy in that colour on top, and a halo behind.
+	fixed *fixedSpec
 }
 
 func (w *writer) level(hex string) (int, error) {
@@ -837,6 +840,50 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 	}
 	fmt.Fprintf(b, `<g transform="matrix(%s %s %s %s %s %s)">`,
 		num(m.A, 4), num(m.B, 4), num(m.C, 4), num(m.D, 4), num(m.TX-w.box.MinX, 2), num(m.TY-w.box.MinY, 2))
+	var fixedMask string
+	if w.fixed != nil && isHead(sl.ID) {
+		if fixedMask, err = pathData(w.fixed.mask.Silhouette); err != nil {
+			return err
+		}
+		// The halo: the mask, blurred, behind the back head slot (the app bakes it into head-key).
+		if w.fixed.glow && sl.ID == "head-key" {
+			gid := w.nextID()
+			fmt.Fprintf(b, `<filter id="%s" x="-50%%" y="-50%%" width="200%%" height="200%%"><feGaussianBlur stdDeviation="2.5"/></filter>`, gid)
+			fmt.Fprintf(b, `<path d="%s" style="fill:%s" fill-opacity="0.75" filter="url(#%s)"/>`, fixedMask, rgbCSS(w.fixed.rgb, 1), gid)
+		}
+	}
+	if err := w.layers(b, m, v, sil, func(i int) string { return fmt.Sprintf("var(--%s%d)", route, i) }); err != nil {
+		return err
+	}
+	if fixedMask != "" {
+		// The gear's own colour inside the mask, over the player-coloured art (same layers).
+		mid := w.nextID()
+		fmt.Fprintf(b, `<clipPath id="%s"><path d="%s"/></clipPath><g clip-path="url(#%s)">`, mid, fixedMask, mid)
+		levels := w.levelList
+		colour := func(i int) string { return rgbCSS(w.fixed.rgb, levels[i]) }
+		if err := w.layers(b, m, v, sil, colour); err != nil {
+			return err
+		}
+		b.WriteString(`</g>`)
+	}
+	b.WriteString(`</g>`)
+	return nil
+}
+
+// nextID is the next per-symbol id ("{id}" is replaced per fighter symbol by the page).
+func (w *writer) nextID() string {
+	id := fmt.Sprintf("{id}%s%d", w.clipPrefix, w.clipN[w.clipPrefix])
+	w.clipN[w.clipPrefix]++
+	return id
+}
+
+// rgbCSS is level × a fixed colour, as the app's matrix draws a green level in that colour.
+func rgbCSS(c [3]int, level float64) string {
+	return fmt.Sprintf("rgb(%d,%d,%d)", int(float64(c[0])*level+0.5), int(float64(c[1])*level+0.5), int(float64(c[2])*level+0.5))
+}
+
+// layers writes one part's layers; colour names the paint for a level index.
+func (w *writer) layers(b *strings.Builder, m Affine, v VecSlot, sil string, colour func(int) string) error {
 	clipID := ""
 	for _, l := range v.Layers {
 		if l.Lattice != nil {
@@ -858,16 +905,15 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 			}
 			if clipID == "" {
 				// "{id}" is replaced per fighter symbol by the page, so ids never collide.
-				clipID = fmt.Sprintf("{id}%s%d", w.clipPrefix, w.clipN[w.clipPrefix])
-				w.clipN[w.clipPrefix]++
+				clipID = w.nextID()
 				fmt.Fprintf(b, `<clipPath id="%s"><path d="%s"/></clipPath>`, clipID, sil)
 			}
 			li, err := w.level(*l.Stroke)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(b, `<path clip-path="url(#%s)" d="%s" style="fill:none;stroke:var(--%s%d)" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"/>`,
-				clipID, d.String(), route, li, num(*l.Width, 2))
+			fmt.Fprintf(b, `<path clip-path="url(#%s)" d="%s" style="fill:none;stroke:%s" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"/>`,
+				clipID, d.String(), colour(li), num(*l.Width, 2))
 			continue
 		}
 		if l.Fill == nil {
@@ -886,13 +932,12 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(b, `<path d="%s" style="fill:var(--%s%d);stroke:var(--%s%d)"%s stroke-width="%s" stroke-linejoin="round"/>`,
-				sil, route, fi, route, si, opacity, num(*l.Width, 2))
+			fmt.Fprintf(b, `<path d="%s" style="fill:%s;stroke:%s"%s stroke-width="%s" stroke-linejoin="round"/>`,
+				sil, colour(fi), colour(si), opacity, num(*l.Width, 2))
 		} else {
-			fmt.Fprintf(b, `<path d="%s" style="fill:var(--%s%d)"%s/>`, sil, route, fi, opacity)
+			fmt.Fprintf(b, `<path d="%s" style="fill:%s"%s/>`, sil, colour(fi), opacity)
 		}
 	}
-	b.WriteString(`</g>`)
 	return nil
 }
 
