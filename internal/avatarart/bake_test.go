@@ -189,6 +189,7 @@ func TestCommittedBakeMatchesSources(t *testing.T) {
 		GearDir:      filepath.Join(fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
 		Roster:       filepath.Join(fgc, "CTCore/FighterRoster.swift"),
 		Colours:      filepath.Join(fgc, "CTCore/DrillsColourCatalog.swift"),
+		Cosmetics:    filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -222,5 +223,68 @@ func TestCropRule(t *testing.T) {
 	}
 	if !Crop(figure, emptyRect(), &hat, u).isEmpty() {
 		t.Error("no head, no crop")
+	}
+}
+
+// Outfit 2 from the kit's cosmetics: its own ten colours, its own markup where it redraws a
+// part (here its headpiece), and the shared crop; the kit's helmets fill the head slots on both outfits.
+func TestBakeOutfitsAndKitGear(t *testing.T) {
+	in := writeFixture(t)
+	in.Cosmetics = filepath.Join(in.KitResources, "cosmetics")
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(in.Cosmetics, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	box := func(w, h float64) string {
+		return `{"size":[` + ftoa(w) + `,` + ftoa(h) + `],"origin":[` + ftoa(w/2) + `,` + ftoa(h) + `],` +
+			`"silhouette":[0,` + ftoa(-w/2) + `,0,1,` + ftoa(w/2) + `,0,2,` + ftoa(w/2) + `,0,1,` + ftoa(-w/2) + `,0,3],` +
+			`"layers":[{"fill":"#0A3D2B","opacity":1}]}`
+	}
+	var colours []string
+	for i := 0; i < 10; i++ {
+		colours = append(colours, `{"index":`+itoa(i+1)+`,"name":"c","hex":"#0A0B`+string(rune('0'+i))+`0"}`)
+	}
+	write("catalog.json", `{"schema_version":1,"outfits":[{"id":"outfit-2","ordinal":2,"presentation":"puppet",
+	  "resource":"cosmetics/outfit-2/puppet/outfit.json","vectors":"cosmetics/outfit-2/puppet/parts.vec.json",
+	  "palette":"cosmetics/outfit-2/puppet/palette.json"}],
+	  "gear":[{"id":"knight-helmet","resource":"cosmetics/gear/knight-helmet/gear.json"}]}`)
+	write("outfit-2/puppet/outfit.json", `{"replaces":{"head-fill":{"image":"parts/head-fill.png",
+	  "image_width":200,"image_height":200,"pivot_x":0.5,"pivot_y":1}}}`)
+	write("outfit-2/puppet/parts.vec.json", `{"format":"puppet-part-vectors","schema_version":1,
+	  "raster_pixels_per_design_unit":4,"slots":{"parts/head-fill.png":`+box(50, 50)+`}}`)
+	write("outfit-2/puppet/palette.json", `{"colors":[`+strings.Join(colours, ",")+`]}`)
+	helm := `{"image":"puppet/head-key.png","image_width":200,"image_height":200,"pivot_x":0.5,"pivot_y":1,"bone":"head"}`
+	write("gear/knight-helmet/gear.json", `{"replaces":["head-key","head-line","head-fill"],"bodies":{"puppet":{
+	  "head-key":`+helm+`,"head-line":`+strings.Replace(helm, "head-key", "head-line", 1)+`,
+	  "head-fill":`+strings.Replace(helm, "head-key", "head-fill", 1)+`}},"outfits":{}}`)
+	write("gear/knight-helmet/puppet/parts.vec.json", `{"format":"puppet-part-vectors","schema_version":1,
+	  "raster_pixels_per_design_unit":4,"slots":{"head-key.png":`+box(50, 50)+`,"head-line.png":`+box(50, 50)+
+		`,"head-fill.png":`+box(50, 50)+`}}`)
+	out, err := Bake(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := out.Fighters["puppet"]
+	o, ok := f.Outfits["2"]
+	if !ok {
+		t.Fatal("outfit 2 not baked")
+	}
+	if len(o.Palette) != 10 || o.Palette[3] != [3]int{10, 11, 48} {
+		t.Errorf("outfit palette %v", o.Palette)
+	}
+	if strings.Join(o.Head, "|") == strings.Join(f.Head, "|") {
+		t.Error("outfit 2 redraws the headpiece, so its head markup differs")
+	}
+	if len(f.Gear["knight-helmet"]) != len(f.Head) || len(o.Gear["knight-helmet"]) != len(o.Head) {
+		t.Error("the helmet fills the head slots on both outfits")
+	}
+	if len(o.Gear["pirate-hat"]) != len(o.Head) {
+		t.Error("the host pirate hat is worn over outfit 2 too")
 	}
 }

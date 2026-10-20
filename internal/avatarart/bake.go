@@ -514,6 +514,9 @@ type Inputs struct {
 	GearDir      string
 	Roster       string
 	Colours      string
+	// Cosmetics is the kit's exported cosmetics folder (KitResources/cosmetics): Outfit 2
+	// and the kit's head gear (Knight and Diving Helmets). Empty or absent: neither is baked.
+	Cosmetics string
 }
 
 // Fighter is one drawable roster entry: its palette, its crop and its headshot paths.
@@ -535,6 +538,21 @@ type Fighter struct {
 	Parts []string `json:"parts"`
 	Head  []string `json:"head"`
 	Hat   []string `json:"hat,omitempty"`
+	// Gear is the kit's head gear on Outfit 1 (Knight and Diving Helmets): head-slot markup
+	// filled into Parts exactly like Hat. The pirate hat stays in Hat.
+	Gear map[string][]string `json:"gear,omitempty"`
+	// Outfits are the fighter's other outfits by number ("2"): their own ten colours, their
+	// own shared markup (an outfit redraws body parts) and their heads, bare and with gear.
+	// The crop (Box) and the levels are the fighter's, shared by every outfit, as in the app.
+	Outfits map[string]OutfitArt `json:"outfits,omitempty"`
+}
+
+// OutfitArt is one outfit of one fighter.
+type OutfitArt struct {
+	Palette [][3]int            `json:"palette"`
+	Parts   []string            `json:"parts"`
+	Head    []string            `json:"head"`
+	Gear    map[string][]string `json:"gear,omitempty"`
 }
 
 // Output is the whole static asset.
@@ -646,6 +664,11 @@ func Bake(in Inputs) (*Output, error) {
 				return nil, fmt.Errorf("%s: the hat changed parts other than the head", f.BodyID)
 			}
 		}
+		if in.Cosmetics != "" {
+			if err := bakeCosmetics(in, sk, ch, idle, w, &fi, f.BodyID, gear.Bodies[f.BodyID], in.GearDir, bareArt); err != nil {
+				return nil, fmt.Errorf("%s: %w", f.BodyID, err)
+			}
+		}
 		fi.Levels = w.levelList
 		out.Fighters[f.BodyID] = fi
 	}
@@ -688,7 +711,7 @@ func pose(sk skeleton, ch character, idle clip, gear map[string]gearArt) (*posed
 			if !ok {
 				continue
 			}
-			if a.Bone != s.Bone {
+			if a.Bone != "" && a.Bone != s.Bone {
 				return nil, fmt.Errorf("gear slot %s is drawn for bone %s, rig has %s", s.ID, a.Bone, s.Bone)
 			}
 			s.ImageWidth, s.ImageHeight, s.PivotX, s.PivotY = a.ImageWidth, a.ImageHeight, a.PivotX, a.PivotY

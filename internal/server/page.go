@@ -159,38 +159,54 @@ const boardScriptSource = `(function () {
   var AVATARS_URL = '__AVATARS_URL__';
   var avatarArt = null;          // the baked file, once loaded
   var avatarWaiting = [];        // tiles drawn before it arrived
-  var DEFAULT_LOOK = { body: 'puppet', fill: [255, 159, 10], outline: null, hat: false };
+  var DEFAULT_LOOK = { body: 'puppet', outfit: '1', gear: null, fill: [255, 159, 10], outline: null, hat: false };
+  // The app's head gear ids, in the order it reads them (CTBoardAvatar.look: the first head item).
+  var HEAD_GEAR = ['pirate-hat', 'knight-helmet', 'diving-helmet'];
   var EX01 = { id: 'bonus-ex01', fill: [100, 210, 255], outline: [255, 201, 60] };
   var AVATAR_V1 = /^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$/;
   var AVATAR_V2 = /^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$/;
 
+  // The head markup an item draws on one outfit's art (src = the fighter for Outfit 1, or
+  // one of its outfits), or null when that art has none.
+  function gearHead(src, id) {
+    if (!id) return null;
+    if (src.gear && src.gear[id] && src.gear[id].length) return src.gear[id];
+    if (id === 'pirate-hat' && src.hat && src.hat.length) return src.hat;
+    return null;
+  }
+
   // The app's fallbacks (CTBoardAvatar.look): no descriptor, a malformed one or an unknown
-  // fighter draw Standard in Player Two Orange; a colour index past the palette draws the
-  // first colour; unknown gear is dropped; a bonus look the fighter does not have is ignored.
+  // fighter draw Standard in Player Two Orange; an outfit this file has no art for draws
+  // Outfit 1; a colour index past the outfit's own list draws its first colour; the first
+  // head-gear id is worn when there is art for it; a bonus look the fighter does not have is
+  // ignored (bonus looks are Outfit 1 colours).
   function avatarLook(raw, art) {
     if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw))) return DEFAULT_LOOK;
     var f = raw.split(':');
     var fighter = art && art.fighters[f[1]];
     if (!fighter) return DEFAULT_LOOK;
-    var colour = fighter.palette[Number(f[3])] || fighter.palette[0];
-    var gear = f[4] ? f[4].split(',') : [];
-    var look = { body: f[1], fill: colour, outline: null, hat: gear.indexOf('pirate-hat') >= 0 && !!(fighter.hat && fighter.hat.length) };
-    if (f[0] === '2' && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0) {
-      look.fill = EX01.fill; look.outline = EX01.outline;
-    }
+    var bonus = f[0] === '2' && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0;
+    var outfit = !bonus && f[2] !== '1' && fighter.outfits && fighter.outfits[f[2]] ? f[2] : '1';
+    var src = outfit === '1' ? fighter : fighter.outfits[outfit];
+    var colour = src.palette[Number(f[3])] || src.palette[0];
+    var ids = (f[4] ? f[4].split(',') : []).filter(function (id) { return HEAD_GEAR.indexOf(id) >= 0; });
+    var gear = ids.length && gearHead(src, ids[0]) ? ids[0] : null;
+    var look = { body: f[1], outfit: outfit, gear: gear, fill: colour, outline: null, hat: gear === 'pirate-hat' };
+    if (bonus) { look.fill = EX01.fill; look.outline = EX01.outline; }
     return look;
   }
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var avatarDefs = null;
-  // One <symbol> per fighter (and per fighter + hat), built once from the baked markup.
+  // One <symbol> per fighter, outfit and gear, built once from the baked markup.
   // The markup is our own static file, never player data.
-  function avatarSymbol(body, hat) {
-    var id = 'av-' + body + (hat ? '-hat' : '');
+  function avatarSymbol(body, outfit, gear) {
+    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '');
     if (document.getElementById(id)) return id;
     var f = avatarArt.fighters[body];
-    var head = (hat ? f.hat : f.head).slice();
-    var markup = f.parts.map(function (part) { return part === '' ? head.shift() : part; }).join('')
+    var src = outfit === '1' ? f : f.outfits[outfit];
+    var head = (gearHead(src, gear) || src.head).slice();
+    var markup = src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join('')
       .split('{id}').join(id + '-');
     var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + markup + '</svg>', 'image/svg+xml');
     var symbol = document.createElementNS(SVG_NS, 'symbol');
@@ -229,7 +245,7 @@ const boardScriptSource = `(function () {
       svg.style.setProperty('--o' + i, rgb(look.outline || look.fill, level));
     });
     var use = document.createElementNS(SVG_NS, 'use');
-    use.setAttribute('href', '#' + avatarSymbol(look.body, look.hat));
+    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear));
     svg.appendChild(use);
     tile.textContent = '';
     tile.appendChild(svg);
@@ -448,7 +464,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".26"
+const pageVersion = ".27"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

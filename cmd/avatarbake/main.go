@@ -1,6 +1,7 @@
 // Command avatarbake regenerates internal/server/static/board-avatars.json, the website's
 // board-avatar headshots, from the fighter art the app ships. Run it whenever the kit pin,
-// the pirate-hat art, the roster or the colour catalog changes:
+// the pirate-hat art, the kit's cosmetics (Outfit 2, helmets), the roster or the colour catalog
+// changes:
 //
 //	go run ./cmd/avatarbake -kit <fighter-engine-kit checkout> -fgc <controller-tester-fgc checkout>
 //
@@ -31,6 +32,7 @@ func main() {
 		GearDir:      filepath.Join(*fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
 		Roster:       filepath.Join(*fgc, "CTCore/FighterRoster.swift"),
 		Colours:      filepath.Join(*fgc, "CTCore/DrillsColourCatalog.swift"),
+		Cosmetics:    filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics"),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "avatarbake:", err)
