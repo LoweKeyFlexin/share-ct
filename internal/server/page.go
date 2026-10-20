@@ -333,11 +333,12 @@ var scriptHash = func() string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }()
 
-// pageVersion is the page's own revision, shown at the top right and bumped on EVERY merge to main, including API changes; previously bumped by hand on
-// every merge to main (Aaron 2026-09-11: "at a Ver number to the far right (start with
-// Ver .01) for each revision"; 2026-10-12: bump on every merge, visible or not).
-// Deliberately NOT the build sha: one merge is one revision, however many pushes it took.
-const pageVersion = ".23"
+// pageVersion is the page's own revision, shown at the top right and bumped on EVERY merge
+// to main, visible change or not, API-only changes included (Aaron 2026-09-11: "at a Ver
+// number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
+// every merge). Deliberately NOT the build sha: one merge is one revision, however many
+// pushes it took.
+const pageVersion = ".24"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
