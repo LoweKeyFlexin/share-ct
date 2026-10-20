@@ -841,7 +841,10 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 	fmt.Fprintf(b, `<g transform="matrix(%s %s %s %s %s %s)">`,
 		num(m.A, 4), num(m.B, 4), num(m.C, 4), num(m.D, 4), num(m.TX-w.box.MinX, 2), num(m.TY-w.box.MinY, 2))
 	var fixedMask string
-	if w.fixed != nil && isHead(sl.ID) {
+	// The gear's own colour goes on the head's OUTLINE slots only (key, line): the fill keeps
+	// the fighter's colour, so the crown never floods the head (Aaron, 2026-10-20: "green still
+	// bleeding into the oni"), exactly as the app draws it.
+	if w.fixed != nil && isHead(sl.ID) && sl.ID != "head-fill" {
 		if fixedMask, err = pathData(w.fixed.mask.Silhouette); err != nil {
 			return err
 		}
