@@ -448,7 +448,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".25"
+const pageVersion = ".26"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -500,12 +500,15 @@ const indexHead = `<!doctype html>
   .row:hover { border-color:var(--line2); }
   .rk { grid-area:rank; font-family:var(--mono); font-size:1rem; color:var(--mute); min-width:1.4rem; text-align:right; }
   .who { grid-area:identity; min-width:0; }
-  /* The app's headshot tile (approved mock): the player colour glowing 26% into the cell
-     at 50%/38%, an inset ring of the colour 45% into the line, rounded 10 (12 on #1). */
+  /* The app's headshot tile (CTBoardAvatarView): the cell, then the player colour at 26%
+     fading to clear by 0.573 x the side from (50%, 38%), then a 1 px inset ring of the line
+     colour with the colour at 45% over it. Radius 10 at 40 px, 12 at 52 px. No other glow. */
   .av { grid-area:avatar; align-self:start; display:block; width:40px; height:40px; border-radius:10px; overflow:hidden;
-        background:radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--c) 26%, var(--cell)) 0%, var(--cell) 72%);
-        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--line)); }
-  .av.lg { width:52px; height:52px; border-radius:12px; }
+        --av-reach:22.92px;
+        background-color:var(--cell);
+        background-image:radial-gradient(circle var(--av-reach) at 50% 38%, color-mix(in srgb, var(--c) 26%, transparent), transparent);
+        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent), inset 0 0 0 1px var(--line); }
+  .av.lg { width:52px; height:52px; border-radius:12px; --av-reach:29.8px; }
   .av svg { display:block; width:100%; height:100%; }
   .av-defs { position:absolute; width:0; height:0; overflow:hidden; }
   .player-identity { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }

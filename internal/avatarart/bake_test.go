@@ -201,3 +201,26 @@ func TestCommittedBakeMatchesSources(t *testing.T) {
 		t.Fatal("internal/server/static/board-avatars.json is stale: run go run ./cmd/avatarbake")
 	}
 }
+
+// The app's final rule: side 140 and headroom 31 mock px, both x unitsPerPx (Standard's
+// hatless height / 455, shared); top from THIS fighter's hatless figure; centre halfway
+// between the hatless and hatted head centres, or the head alone without hat art.
+func TestCropRule(t *testing.T) {
+	u := 184.64 / 455
+	figure := Rect{-50, -170, 50, 15}
+	head := Rect{-16, -170, 14, -133} // midX -1
+	hat := Rect{-30, -178, 20, -133}  // midX -5
+	got := Crop(figure, head, &hat, u)
+	side := 140 * u
+	want := Rect{-3 - side/2, -170 - 31*u, -3 + side/2, -170 - 31*u + side}
+	if math.Abs(got.MinX-want.MinX) > 1e-9 || math.Abs(got.MinY-want.MinY) > 1e-9 ||
+		math.Abs(got.MaxX-want.MaxX) > 1e-9 || math.Abs(got.MaxY-want.MaxY) > 1e-9 {
+		t.Errorf("crop %+v, want %+v", got, want)
+	}
+	if noHat := Crop(figure, head, nil, u); math.Abs(noHat.MinX-(-1-side/2)) > 1e-9 {
+		t.Errorf("without hat art the crop centres on the head: %+v", noHat)
+	}
+	if !Crop(figure, emptyRect(), &hat, u).isEmpty() {
+		t.Error("no head, no crop")
+	}
+}
