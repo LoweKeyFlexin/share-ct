@@ -75,17 +75,19 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 		}
 		return err
 	}
-	root := filepath.Dir(in.Cosmetics) // catalog paths are relative to the resource root
+	// Catalog paths are relative to the kit's resource root ("cosmetics/..."); resolve them
+	// inside in.Cosmetics so the folder may live anywhere.
+	at := func(rel string) string { return filepath.Join(in.Cosmetics, strings.TrimPrefix(rel, "cosmetics/")) }
 	byName := func(image string) string { return filepath.Base(image) }
 
 	// item -> outfit ("" = Outfit 1) -> this body's head gear.
 	gearFor := map[string]map[string]*headGear{}
 	for _, g := range cat.Gear {
 		var doc kitGearDoc
-		if err := readJSON(filepath.Join(root, g.Resource), &doc); err != nil {
+		if err := readJSON(at(g.Resource), &doc); err != nil {
 			return err
 		}
-		dir := filepath.Dir(filepath.Join(root, g.Resource))
+		dir := filepath.Dir(at(g.Resource))
 		load := func(art map[string]gearArt) (*headGear, error) {
 			if len(art) == 0 {
 				return nil, nil
@@ -189,18 +191,18 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 			continue
 		}
 		var doc outfitDoc
-		if err := readJSON(filepath.Join(root, o.Resource), &doc); err != nil {
+		if err := readJSON(at(o.Resource), &doc); err != nil {
 			return err
 		}
 		var vec vecDoc
-		if err := readJSON(filepath.Join(root, o.Vectors), &vec); err != nil {
+		if err := readJSON(at(o.Vectors), &vec); err != nil {
 			return err
 		}
 		if vec.Format != "puppet-part-vectors" || vec.SchemaVersion != 1 {
 			return fmt.Errorf("%s: unsupported vector document", o.ID)
 		}
 		var pal paletteDoc
-		if err := readJSON(filepath.Join(root, o.Palette), &pal); err != nil {
+		if err := readJSON(at(o.Palette), &pal); err != nil {
 			return err
 		}
 		if len(pal.Colors) != 10 {
