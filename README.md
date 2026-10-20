@@ -363,6 +363,12 @@ The same name, platform and input-device metadata and local blocking/reporting
 identity remain available on each run. The page's Recent switch shows this stream
 when a drill is selected and refreshes every 15 seconds while visible.
 
+`&window=30d` limits either view to the last 30 days and adds `window:"30d"` to the
+response. Top ranks each player's best score set in the window, drawn from published
+runs and from personal bests set in the window; Recent shows only runs from the window;
+`own` and `board_size` are the window's standing. `window=all` (or no `window`) is the
+all-time board in its existing shape. Unknown windows are rejected.
+
 Storage is bounded to the latest **200 run rows per player across all drills** and
 **90 days**, whichever expires first. Runs are removed on new submissions, Recent
 reads, at startup, and by an hourly worker tied to process shutdown; expired rows
