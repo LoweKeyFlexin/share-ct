@@ -289,6 +289,7 @@ const boardScriptSource = `(function () {
     // gets the metal flat; HIGH SCORE — the one that pays for three consistent attempts,
     // not one lucky rep — gets it as struck foil, a slow sheen across the number.
     if (podium && byScore) { cls += ' foil'; }
+    if (feed) { cls += ' feed'; }
     var row = el('details', cls);
     var head = el('summary');
 
@@ -312,6 +313,8 @@ const boardScriptSource = `(function () {
     var date = when(e.created_at);
     if (date) subline.appendChild(el('span', 'entry-date', date));
     var device = el('span', 'device-identity');
+    // The separator rides with the device, so a wrap never leaves it dangling after the date.
+    if (date && e.device_label) device.appendChild(el('span', 'meta-sep', '· '));
     device.appendChild(el('span', 'device-label', e.device_label || ''));
     subline.appendChild(device);
     head.appendChild(who);
@@ -464,7 +467,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".32"
+const pageVersion = ".33"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -508,9 +511,17 @@ const indexHead = `<!doctype html>
      more and doesn't make the leaderboard selection take up so much of the app." */
   .board { list-style:none; margin:0; padding:0 .75rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
   .row { border:1px solid var(--line); border-radius:.6rem; background:var(--well); overflow:hidden; }
+  /* The date and device sit directly under the name, in the identity column, while the score
+     spans both lines on the right. Before, the metadata started below the two-line score and
+     spread across under it, leaving a tall empty band in every row on a phone (Aaron, 2026-10-20). */
   .row > summary { display:grid; grid-template-columns:1.4rem auto minmax(0,1fr) auto .5rem;
-                   grid-template-areas:"rank avatar identity score disclosure" ". avatar metadata metadata .";
-                   align-items:start; column-gap:.65rem; row-gap:.35rem; padding:.7rem .85rem; cursor:pointer; list-style:none; }
+                   grid-template-areas:"rank avatar identity score disclosure" "rank avatar metadata score disclosure";
+                   grid-template-rows:auto 1fr;
+                   align-items:start; column-gap:.65rem; row-gap:.15rem; padding:.7rem .85rem; cursor:pointer; list-style:none; }
+  /* A feed has no standings, so it has no rank column at all (it used to print a lone dot). */
+  .row.feed > summary { grid-template-columns:auto minmax(0,1fr) auto .5rem;
+                        grid-template-areas:"avatar identity score disclosure" "avatar metadata score disclosure"; }
+  .row.feed .rk { display:none; }
   .row > summary::-webkit-details-marker { display:none; }
   .row > summary:focus-visible { outline:2px solid var(--accent3); outline-offset:-2px; }
   .row:hover { border-color:var(--line2); }
@@ -541,7 +552,8 @@ const indexHead = `<!doctype html>
   .platform-glyph { width:13px; height:13px; flex:0 0 13px; color:var(--dim); }
   /* Metadata spans the identity and score columns. A date cannot squeeze the
      controller label into a thin side column, and ordinary words stay intact. */
-  .device-subline { grid-area:metadata; min-width:0; display:grid; gap:.15rem; color:var(--mute);
+  .device-subline { grid-area:metadata; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline;
+                    column-gap:.4rem; row-gap:.05rem; color:var(--mute);
                     font-family:var(--mono); font-size:.74rem; line-height:1.4; }
   .device-identity, .device-label, .entry-date { min-width:0; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
   .device-identity { display:block; }
@@ -641,7 +653,8 @@ const indexHead = `<!doctype html>
     .tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:stretch; margin-top:.75rem; gap:.4rem; }
     .tabs button { min-height:44px; font-size:.75rem; letter-spacing:.03em; padding:.5rem .3rem; }
     .who b { font-size:1rem; }
-    .row > summary { column-gap:.5rem; }
+    .row > summary { column-gap:.55rem; padding:.6rem .7rem; }
+    .big b { font-size:1.15rem; }
   }
 
   /* Drills' headline follows its earned tier; the standing numeral keeps the
