@@ -1,4 +1,4 @@
-// Package drills owns aggregate, full-speed Endless scores, separate from Reaction timings.
+// Package drills owns aggregate Endless and Arcade scores, separate from Reaction timings.
 package drills
 
 import (
@@ -19,32 +19,36 @@ import (
 )
 
 type Request struct {
-	ClientID    string `json:"client_id"`
-	DrillID     string `json:"drill_id"`
-	Score       *int   `json:"score"`
-	Misses      int    `json:"misses"`
-	Source      string `json:"source"`
-	AppBuild    string `json:"app_build"`
-	Platform    string `json:"platform"`
-	DeviceModel string `json:"device_model"`
-	DeviceLabel string `json:"device_label"`
+	Mode         string `json:"mode,omitempty"`
+	*ArcadeStats `json:",omitempty"`
+	ClientID     string `json:"client_id"`
+	DrillID      string `json:"drill_id"`
+	Score        *int   `json:"score"`
+	Misses       int    `json:"misses"`
+	Source       string `json:"source"`
+	AppBuild     string `json:"app_build"`
+	Platform     string `json:"platform"`
+	DeviceModel  string `json:"device_model"`
+	DeviceLabel  string `json:"device_label"`
 }
 type Entry struct {
-	Rank        int    `json:"rank"`
-	PlayerRef   string `json:"player_ref"`
-	PlayerShort string `json:"player_short"`
-	DisplayName string `json:"display_name"`
-	Score       int    `json:"score"`
-	Source      string `json:"source"`
-	Platform    string `json:"platform"`
-	DeviceLabel string `json:"device_label"`
-	CreatedAt   string `json:"created_at"`
-	RunRef      string `json:"run_ref,omitempty"`
+	*ArcadeStats `json:",omitempty"`
+	Rank         int    `json:"rank"`
+	PlayerRef    string `json:"player_ref"`
+	PlayerShort  string `json:"player_short"`
+	DisplayName  string `json:"display_name"`
+	Score        int    `json:"score"`
+	Source       string `json:"source"`
+	Platform     string `json:"platform"`
+	DeviceLabel  string `json:"device_label"`
+	CreatedAt    string `json:"created_at"`
+	RunRef       string `json:"run_ref,omitempty"`
 	// Avatar is the player's current board avatar descriptor, or null
 	// (controller-tester-fgc#7853).
 	Avatar *string `json:"avatar"`
 }
 type Board struct {
+	Mode      string  `json:"mode"`
 	DrillID   string  `json:"drill_id"`
 	Entries   []Entry `json:"entries"`
 	Own       *Entry  `json:"own"`
@@ -117,7 +121,13 @@ func validate(r Request) string {
 		return "drill_id"
 	case r.Score == nil || *r.Score < 0 || *r.Score > 1000000:
 		return "score"
-	case r.Misses != 3:
+	case r.Mode != "" && r.Mode != "endless" && r.Mode != "arcade":
+		return "mode"
+	case r.Mode != "arcade" && r.ArcadeStats != nil:
+		return "mode"
+	case r.Mode == "arcade" && (r.DrillID == "mental-stack" || validateArcade(r) != ""):
+		return validateArcadeDrill(r)
+	case r.Mode != "arcade" && r.Misses != 3:
 		return "misses"
 	case r.Source != "touch" && r.Source != "pad" && r.Source != "keyboard":
 		return "source"
@@ -158,7 +168,11 @@ func (m *Module) submitWithIntent(w http.ResponseWriter, r *http.Request, publis
 		httpx.WriteRateLimited(w, retry)
 		return
 	}
-	id, repeated, err := m.saveWithIntent(r.Context(), p.ID, req, publishesRun)
+	save := m.saveWithIntent
+	if req.Mode == "arcade" {
+		save = m.saveArcade
+	}
+	id, repeated, err := save(r.Context(), p.ID, req, publishesRun)
 	if errors.Is(err, errConflict) {
 		httpx.WriteInvalid(w, "client_id_conflict")
 		return
@@ -167,7 +181,12 @@ func (m *Module) submitWithIntent(w http.ResponseWriter, r *http.Request, publis
 		httpx.WriteError(w, 500, "internal")
 		return
 	}
-	b, err := m.read(r.Context(), req.DrillID, p.ID, 1)
+	var b Board
+	if req.Mode == "arcade" {
+		b, err = m.readArcade(r.Context(), req.DrillID, p.ID, 1, 0, false)
+	} else {
+		b, err = m.read(r.Context(), req.DrillID, p.ID, 1)
+	}
 	if err != nil {
 		httpx.WriteError(w, 500, "internal")
 		return
@@ -254,12 +273,15 @@ func (m *Module) saveWithIntent(ctx context.Context, player string, req Request,
 		return 0, false, err
 	}
 	if publishesRun {
-		_, err = tx.ExecContext(ctx, `INSERT INTO drill_runs(player_id,client_id,receipt_id,body_hash,drill_id,score,source,app_build,platform,device_model,device_label,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, player, req.ClientID, id, hash, req.DrillID, *req.Score, req.Source, req.AppBuild, req.Platform, req.DeviceModel, req.DeviceLabel, now)
+		runResult, err := tx.ExecContext(ctx, `INSERT INTO drill_runs(player_id,client_id,receipt_id,body_hash,drill_id,score,source,app_build,platform,device_model,device_label,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, player, req.ClientID, id, hash, req.DrillID, *req.Score, req.Source, req.AppBuild, req.Platform, req.DeviceModel, req.DeviceLabel, now)
 		if err != nil {
 			return 0, false, err
 		}
-		_, err = tx.ExecContext(ctx, `DELETE FROM drill_runs WHERE player_id=? AND id NOT IN (SELECT id FROM drill_runs WHERE player_id=? ORDER BY id DESC LIMIT ?)`, player, player, RunCap)
+		runID, err := runResult.LastInsertId()
 		if err != nil {
+			return 0, false, err
+		}
+		if err = prunePlayerRuns(ctx, tx, player, "endless", runID, now); err != nil {
 			return 0, false, err
 		}
 	}
@@ -282,7 +304,7 @@ func (m *Module) read(ctx context.Context, drill, player string, limit int) (Boa
 
 // readSince is the Top board; since > 0 limits it to scores set at or after that Unix time.
 func (m *Module) readSince(ctx context.Context, drill, player string, limit int, since int64) (Board, error) {
-	b := Board{DrillID: drill, Entries: []Entry{}}
+	b := Board{Mode: "endless", DrillID: drill, Entries: []Entry{}}
 	var rows *sql.Rows
 	var err error
 	if since > 0 {
@@ -323,6 +345,15 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteBadRequest(w, "drill_id")
 		return
 	}
+	mode := q.Get("mode")
+	if mode != "" && mode != "endless" && mode != "arcade" {
+		httpx.WriteBadRequest(w, "mode")
+		return
+	}
+	if mode == "arcade" && drill == "mental-stack" {
+		httpx.WriteBadRequest(w, "drill_id")
+		return
+	}
 	sort := q.Get("sort")
 	if sort != "" && sort != "top" && sort != "recent" {
 		httpx.WriteBadRequest(w, "sort")
@@ -355,7 +386,12 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 	}
 	var b Board
 	var err error
-	if sort == "recent" {
+	if mode == "arcade" {
+		if sort == "recent" && limit > 50 {
+			limit = 50
+		}
+		b, err = m.readArcade(r.Context(), drill, player, limit, since, sort == "recent")
+	} else if sort == "recent" {
 		if limit > 50 {
 			limit = 50
 		}

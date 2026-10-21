@@ -19,7 +19,7 @@ const boardScriptSource = `(function () {
   // feed), FASTEST and HIGH SCORE (both the mixed board, differing only in what ranks it).
   // Per-input boards still exist on the API — source=touch|pad|keyboard — and can come back
   // as a filter when there are enough players to make three separate boards worth reading.
-  var state = { view: 'recent', drill: '' };
+  var state = { view: 'recent', drill: '', mode: 'endless' };
   var loadGeneration = 0;
 
   // How deep each list goes. FASTEST is a TOP TEN by Aaron's ask; the other two stay
@@ -110,6 +110,20 @@ const boardScriptSource = `(function () {
       message: existingRecords ? 'No recent runs yet. View HIGH SCORE for existing records.' : 'No scores yet.',
       offerHighScores: existingRecords
     };
+  }
+
+  function drillMode(drill, requested) {
+    var atomic = ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact'];
+    return requested === 'arcade' && atomic.indexOf(drill) >= 0 ? 'arcade' : 'endless';
+  }
+
+  function arcadePresentation(entry) {
+    var seconds = Math.floor(entry.elapsed_ms / 1000);
+    var time = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') +
+      '.' + String(Math.floor((entry.elapsed_ms % 1000) / 10)).padStart(2, '0');
+    return { headline: entry.completed ? time : String(entry.enemies_defeated),
+      label: entry.completed ? 'CLEAR TIME' : 'ENEMIES',
+      progress: entry.enemies_defeated + ' / ' + entry.total_opponents + ' enemies' };
   }
 
   function platformInfo(value) {
@@ -279,10 +293,12 @@ const boardScriptSource = `(function () {
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
     var endless = !!state.drill;
+    var arcade = endless && drillMode(state.drill, state.mode) === 'arcade';
+    var arcadeInfo = arcade ? arcadePresentation(e) : null;
     var byScore = endless || state.view === 'score';
     var feed = state.view === 'recent';
     // A feed has no standings, so it has no podium either.
-    var drillRank = endless ? drillsPresentation(e, feed) : null;
+    var drillRank = arcade ? {tier: e.completed ? 'ARCADE CLEAR' : 'ARCADE', podium: !feed && e.rank >= 1 && e.rank <= 3} : endless ? drillsPresentation(e, feed) : null;
     var podium = endless ? drillRank.podium : !feed && e.rank <= 3;
     var cls = 'row';
     if (endless) { cls += ' drill'; }
@@ -325,8 +341,8 @@ const boardScriptSource = `(function () {
     head.appendChild(who);
 
     var big = el('div', 'big');
-    big.appendChild(el('b', null, byScore ? String(e.score) : frames(e.best_ms)));
-    big.appendChild(el('small', null, endless ? 'POINTS' : (byScore ? frames(e.best_ms) : 'avg ' + frames(e.avg_ms))));
+    big.appendChild(el('b', null, arcade ? arcadeInfo.headline : byScore ? String(e.score) : frames(e.best_ms)));
+    big.appendChild(el('small', null, arcade ? arcadeInfo.label : endless ? 'POINTS' : (byScore ? frames(e.best_ms) : 'avg ' + frames(e.avg_ms))));
     head.appendChild(big);
 
     head.appendChild(el('span', 'chev', '›'));
@@ -340,6 +356,15 @@ const boardScriptSource = `(function () {
     }
     if (typeof e.accuracy === 'number') def(dl, 'landed', Math.round(e.accuracy * 100) + '%');
     def(dl, 'score', String(e.score));
+    if (arcade) {
+      def(dl, 'run', e.completed ? 'ARCADE CLEAR' : 'GAME OVER');
+      def(dl, 'progress', arcadeInfo.progress);
+      def(dl, 'time', arcadePresentation(Object.assign({}, e, {completed:true})).headline);
+      def(dl, 'hits', String(e.hits));
+      def(dl, 'perfect opponents', String(e.perfect_opponents));
+      def(dl, 'consistency bonus', '+' + e.consistency_bonus);
+      def(dl, 'time bonus', '+' + e.time_bonus);
+    }
     // The tier is a SPEED rank (TierName is a pure function of best_ms), so on a score
     // board it tracks the winning run's time and would read as a lower rank beside a
     // higher score. Shown only where it agrees with what ranks the list.
@@ -373,7 +398,7 @@ const boardScriptSource = `(function () {
   function render(board) {
     var activity = document.getElementById('endless-drill');
     var title = activity.options[activity.selectedIndex].text;
-    document.getElementById('board-heading').textContent = title.toUpperCase() + ' LEADERBOARD';
+    document.getElementById('board-heading').textContent = title.toUpperCase() + (state.drill ? ' · ' + drillMode(state.drill, state.mode).toUpperCase() : '') + ' LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -395,7 +420,7 @@ const boardScriptSource = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
+    ranked.textContent = state.drill && drillMode(state.drill, state.mode) === 'arcade' ? (state.view === 'recent' ? 'Newly shared Arcade attempts, newest first.' : 'Clears first, fastest clear time wins. Partial runs rank by enemies defeated, then points, then time. Ladder length is shown in each row.') : state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -407,13 +432,14 @@ const boardScriptSource = `(function () {
     // leaderboard for now". The server still accepts the parameter, so the board can grow
     // a window control again without a server change — nothing was removed underneath.
     var generation = ++loadGeneration;
-    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
+    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&mode=' + drillMode(state.drill, state.mode) + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
       ? '/v1/recent?limit=' + LIMITS.recent
       : '/v1/board?source=all&window=all&sort=' + state.view + '&limit=' + LIMITS[state.view];
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(function (board) {
         if (generation !== loadGeneration) return;
+        if (state.drill && drillMode(state.drill, state.mode) === 'arcade' && board.mode !== 'arcade') throw new Error('Arcade board unavailable');
         try {
           render(board);
         } catch (err) {
@@ -444,11 +470,18 @@ const boardScriptSource = `(function () {
 
   document.getElementById('endless-drill').addEventListener('change', function () {
     state.drill = this.value;
+    state.mode = drillMode(state.drill, state.mode);
+    document.getElementById('drill-mode').value = state.mode;
+    document.getElementById('drill-mode-choice').hidden = !state.drill || state.drill === 'mental-stack';
     if (state.drill && state.view === 'fastest') state.view = 'score';
     document.querySelector('[data-view="fastest"]').disabled = !!state.drill;
     Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
       button.setAttribute('aria-pressed', String(button.getAttribute('data-view') === state.view));
     });
+    load();
+  });
+  document.getElementById('drill-mode').addEventListener('change', function () {
+    state.mode = drillMode(state.drill, this.value);
     load();
   });
   loadAvatarArt();
@@ -472,7 +505,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".43"
+const pageVersion = ".44"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -642,6 +675,7 @@ const indexHead = `<!doctype html>
      rendered at full height. Caught by measuring offsetParent, not by reading the
      attribute back. */
   .tabs[hidden] { display:none; }
+  .leaderboard-choice[hidden] { display:none; }
   .tabs button { font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.09em; color:var(--dim);
                  background:var(--well); border:1px solid var(--line); border-radius:.3rem;
                  padding:.26rem .55rem; cursor:pointer; }
@@ -704,6 +738,13 @@ const indexHead = `<!doctype html>
           <option value="mental-stack">Mental Stack</option>
         </select>
       </div>
+      <div class="leaderboard-choice" id="drill-mode-choice" hidden>
+        <label for="drill-mode">MODE</label>
+        <select id="drill-mode" aria-label="Choose drill mode">
+          <option value="endless" selected>Endless</option>
+          <option value="arcade">Arcade</option>
+        </select>
+      </div>
       <nav class="tabs" aria-label="View">
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
@@ -716,7 +757,7 @@ const indexHead = `<!doctype html>
   <footer>
     <p>Reaction Test score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
        <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
-    <p>Reaction scores are recomputed on the server from attempt timings. Drills scores count successful active reactions at 100% speed with three lives; correct non-actions earn no points. No accounts, no tracking; erase your data from the app.</p>
+    <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions; correct non-actions earn no points. Arcade ranks clears by time and partial attempts by whole enemies defeated, with consistency and clear-time bonus points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
 </main>

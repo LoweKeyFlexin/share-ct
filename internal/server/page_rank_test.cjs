@@ -80,3 +80,23 @@ test('card metadata owns readable sibling lines outside the identity and score c
     assert.equal(find(card,'big').children[0].textContent,'12.0f');
   }
 });
+
+
+test('Arcade mode is available only for the five atomic drills', () => {
+  for (const drill of ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact']) {
+    assert.equal(context.drillMode(drill, 'arcade'), 'arcade');
+    assert.equal(context.drillMode(drill, 'endless'), 'endless');
+  }
+  for (const drill of ['', 'mental-stack', 'unknown']) assert.equal(context.drillMode(drill, 'arcade'), 'endless');
+});
+
+test('Arcade partial headline counts whole enemies, while clear headline is elapsed time', () => {
+  const partial = context.arcadePresentation({completed:false,enemies_defeated:7,total_opponents:13,elapsed_ms:123456});
+  assert.equal(partial.headline, '7');
+  assert.equal(partial.label, 'ENEMIES');
+  assert.equal(partial.progress, '7 / 13 enemies');
+  const clear = context.arcadePresentation({completed:true,enemies_defeated:12,total_opponents:12,elapsed_ms:123456});
+  assert.equal(clear.headline, '2:03.45');
+  assert.equal(clear.label, 'CLEAR TIME');
+  assert.equal(clear.progress, '12 / 12 enemies');
+});
