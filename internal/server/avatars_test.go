@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -53,5 +54,27 @@ func TestPageLoadsTheCurrentAvatarArt(t *testing.T) {
 	_, page := do(t, h, "GET", "/")
 	if !strings.Contains(page, "'"+avatarsURL+"'") || strings.Contains(page, "__AVATARS_URL__") {
 		t.Error("the page script must carry the current avatar art URL")
+	}
+}
+
+// The page's default avatar is blue Standard (Aaron, 2026-10-20): its fill is Standard's COLOR 1
+// in the baked art, so a palette change can never leave the default in an old colour.
+func TestDefaultLookIsStandardColorOne(t *testing.T) {
+	var art struct {
+		Fighters map[string]struct {
+			Palette [][]int `json:"palette"`
+		} `json:"fighters"`
+	}
+	if err := json.Unmarshal(avatarsJSON, &art); err != nil {
+		t.Fatal(err)
+	}
+	std, ok := art.Fighters["puppet"]
+	if !ok || len(std.Palette) == 0 {
+		t.Fatal("no Standard palette in the baked art")
+	}
+	c := std.Palette[0]
+	want := fmt.Sprintf("var DEFAULT_LOOK = { body: 'puppet', outfit: '1', gear: null, fill: [%d, %d, %d], outline: null, hat: false };", c[0], c[1], c[2])
+	if !strings.Contains(boardScriptSource, want) {
+		t.Errorf("page default is not Standard COLOR 1; want %q", want)
 	}
 }

@@ -159,7 +159,10 @@ const boardScriptSource = `(function () {
   var AVATARS_URL = '__AVATARS_URL__';
   var avatarArt = null;          // the baked file, once loaded
   var avatarWaiting = [];        // tiles drawn before it arrived
-  var DEFAULT_LOOK = { body: 'puppet', outfit: '1', gear: null, fill: [255, 159, 10], outline: null, hat: false };
+  // Standard in its COLOR 1 (Player One Cyan), Outfit 1, no gear: Aaron chose blue Standard as
+  // the default (controller-tester-fgc, 2026-10-20). TestDefaultLookIsStandardColorOne ties the
+  // fill to the baked palette.
+  var DEFAULT_LOOK = { body: 'puppet', outfit: '1', gear: null, fill: [100, 210, 255], outline: null, hat: false };
   var EX01 = { id: 'bonus-ex01', fill: [100, 210, 255], outline: [255, 201, 60] };
   var AVATAR_V1 = /^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$/;
   var AVATAR_V2 = /^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$/;
@@ -174,7 +177,7 @@ const boardScriptSource = `(function () {
   }
 
   // The app's fallbacks (CTBoardAvatar.look): no descriptor, a malformed one or an unknown
-  // fighter draw Standard in Player Two Orange; an outfit this file has no art for draws
+  // fighter draw Standard in its COLOR 1 (blue); an outfit this file has no art for draws
   // Outfit 1; a colour index past the outfit's own list draws its first colour; the first
   // head-gear id is worn when there is art for it; a bonus look the fighter does not have is
   // ignored (bonus looks are Outfit 1 colours).
@@ -469,7 +472,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".42"
+const pageVersion = ".43"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
