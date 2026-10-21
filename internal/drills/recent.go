@@ -16,7 +16,28 @@ const RunRetention = 90 * 24 * time.Hour
 // PruneExpired runs at startup and hourly, and before a Recent read or accepted
 // submission. Expired runs never appear publicly while awaiting routine cleanup.
 func PruneExpired(ctx context.Context, db *sql.DB, now time.Time) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM drill_runs WHERE created_at<?`, now.Add(-RunRetention).Unix())
+	for _, table := range []string{"drill_runs", "arcade_runs", "drill_feed_order"} {
+		if _, err := db.ExecContext(ctx, `DELETE FROM `+table+` WHERE created_at<?`, now.Add(-RunRetention).Unix()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// prunePlayerRuns keeps the consented 200-row cap across all drills and both
+// modes. The two deletes share the caller's transaction, so publication is atomic.
+func prunePlayerRuns(ctx context.Context, tx *sql.Tx, player, mode string, runID, now int64) error {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO drill_feed_order(player_id,mode,run_id,created_at) VALUES(?,?,?,?)`, player, mode, runID, now); err != nil {
+		return err
+	}
+	for _, item := range []struct{ table, mode string }{{"drill_runs", "endless"}, {"arcade_runs", "arcade"}} {
+		_, err := tx.ExecContext(ctx, `DELETE FROM `+item.table+` WHERE player_id=? AND id NOT IN (
+ SELECT run_id FROM (SELECT mode,run_id FROM drill_feed_order WHERE player_id=? ORDER BY id DESC LIMIT ?) WHERE mode=?)`, player, player, RunCap, item.mode)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM drill_feed_order WHERE player_id=? AND id NOT IN (SELECT id FROM drill_feed_order WHERE player_id=? ORDER BY id DESC LIMIT ?)`, player, player, RunCap)
 	return err
 }
 

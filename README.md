@@ -396,3 +396,56 @@ CT_KIT=<kit> CT_FGC=<fgc> go test ./internal/avatarart   # the committed file ma
 ```
 
 The crop constants live in one place, `internal/avatarart/bake.go`.
+
+
+## Arcade Drills boards
+
+The five atomic drill IDs also have separate **Arcade** rankings. Mental Stack
+remains Endless only. Existing requests with no `mode` retain their Endless
+meaning; no historical results are inferred or backfilled. Every drill board
+now echoes `mode:"endless"` or `mode:"arcade"`. Clients requesting Arcade must
+verify this echo: older servers may ignore the query and return an Endless board.
+
+Use the existing opt-in routes with `mode:"arcade"`:
+
+- `POST /v1/drills/scores`: personal best only.
+- `POST /v1/drills/runs`: explicitly publishes the newly completed attempt to Recent.
+- `GET /v1/drills/board?drill_id=anti-air&mode=arcade`: Arcade personal bests.
+- Add `sort=recent` or `window=30d` with the existing semantics.
+
+An Arcade submission adds `enemies_defeated`, `total_opponents`, `completed`,
+`elapsed_ms`, `perfect_opponents` and `hits` to the usual aggregate score body.
+`misses` is the actual nonnegative mistake count, rather than the Endless fixed
+three. Only whole defeated opponents count; boss phases do not add enemies.
+The current one-pass ladder has 12 or 13 opponents after player exclusions.
+`completed` must agree with `enemies_defeated == total_opponents`. Elapsed time
+is positive and capped at one day; perfect opponents cannot exceed defeated
+opponents, and hits cannot be below defeated opponents. Device/platform/source
+validation and authenticated submission limits are unchanged.
+
+The server verifies `score` using:
+
+```
+consistency_bonus = 5 * perfect_opponents + 10 * floor(enemies_defeated / 3)
+time_bonus = completed ? max(0, 300 - floor(elapsed_ms / 1000)) : 0
+score = hits + consistency_bonus + time_bonus
+```
+
+Optional nonzero submitted `consistency_bonus` or `time_bonus` must match these
+calculations; they never override them. Board rows always return every raw
+Arcade fact and both computed bonuses, including zero values, alongside the
+existing identity, avatar, device and timestamp fields.
+
+Cleared runs rank ahead of partial attempts. Clears rank by elapsed time
+ascending, then score descending. Partial attempts rank by enemies defeated
+descending, then score descending, then elapsed time ascending. Remaining ties
+keep the earlier result. The identical ordering selects each player's personal
+best. Raw clear time is compared across 12- and 13-opponent ladders; each row
+shows its total for context. Arcade and Endless never share ranks or PBs.
+
+Migration `012` creates separate Arcade best, run and retry-receipt stores with
+player-erasure cascades. Recent retains at most 200 rows/player across all drills and both modes, and
+90 days; each mode retains at most 100 retry receipts/player. Best-only results
+never enter Recent. Retained bests and runs preserve exact retry intent beyond
+the receipt ring, and a changed body or cross-route retry conflicts. Legacy
+Endless request hashes are unchanged. No attempt/input history is stored.
