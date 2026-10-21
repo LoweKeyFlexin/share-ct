@@ -93,7 +93,7 @@ test('Arcade mode is available only for the five atomic drills', () => {
 test('Arcade partial headline counts whole enemies, while clear headline is elapsed time', () => {
   const partial = context.arcadePresentation({completed:false,enemies_defeated:7,total_opponents:13,elapsed_ms:123456});
   assert.equal(partial.headline, '7');
-  assert.equal(partial.label, 'ENEMIES DEFEATED');
+  assert.equal(partial.label, 'ENEMIES');
   assert.equal(partial.progress, '7 / 13 enemies');
   const clear = context.arcadePresentation({completed:true,enemies_defeated:12,total_opponents:12,elapsed_ms:123456});
   assert.equal(clear.headline, '2:03.45');

@@ -122,7 +122,7 @@ const boardScriptSource = `(function () {
     var time = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') +
       '.' + String(Math.floor((entry.elapsed_ms % 1000) / 10)).padStart(2, '0');
     return { headline: entry.completed ? time : String(entry.enemies_defeated),
-      label: entry.completed ? 'CLEAR TIME' : 'ENEMIES DEFEATED',
+      label: entry.completed ? 'CLEAR TIME' : 'ENEMIES',
       progress: entry.enemies_defeated + ' / ' + entry.total_opponents + ' enemies' };
   }
 
