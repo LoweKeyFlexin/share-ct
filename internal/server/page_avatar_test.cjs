@@ -20,7 +20,7 @@ const art = { fighters: {
                       gear: { 'pirate-hat': ['<p/>'], 'diving-helmet': ['<d/>'] } } } },
 }};
 const look = (raw) => JSON.parse(JSON.stringify(context.avatarLook(raw, art)));
-const DEFAULT = { body: 'puppet', outfit: '1', gear: null, fill: [255,159,10], outline: null, hat: false };
+const DEFAULT = { body: 'puppet', outfit: '1', gear: null, fill: [100,210,255], outline: null, hat: false };
 
 test('v1: fighter, colour index into its palette, pirate hat', () => {
   assert.deepEqual(look('1:puppet-oni:1:1:pirate-hat'), { body:'puppet-oni', outfit:'1', gear:'pirate-hat', fill:[90,40,120], outline:null, hat:true });
@@ -39,7 +39,7 @@ test('v2 EX01 on Standard is two-tone; on any other fighter, or another look, it
   assert.deepEqual(look('2:puppet:1:1::bonus-zz99'), { body:'puppet', outfit:'1', gear:null, fill:[124,242,166], outline:null, hat:false });
 });
 
-test('empty, garbage, unknown fighter, bad shapes and no art draw the orange default', () => {
+test('empty, garbage, unknown fighter, bad shapes and no art draw the blue Standard default', () => {
   for (const raw of [null, undefined, 42, '', 'garbage', '1:puppet-ghost:1:0', '3:puppet:1:0',
                      '2:puppet:1:0', '1:puppet:1:0::bonus-ex01', '1:Puppet:1:0', '<b>x</b>',
                      '2:' + 'f'.repeat(32) + ':1:0:' + 'g'.repeat(13) + ':' + 'l'.repeat(12)]) {
