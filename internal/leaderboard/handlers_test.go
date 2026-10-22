@@ -395,7 +395,7 @@ func TestBoardWindowAndLimit(t *testing.T) {
 func TestBoardParamsAndEmpty(t *testing.T) {
 	hs := newHarness(t)
 	rec, _ := hs.do("GET", "/v1/board", "", "", "")
-	if want := `{"source":"touch","window":"all","entries":[]}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
+	if want := `{"source":"touch","window":"all","entries":[],"player_count":0}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("empty board: %d %q, want %q", rec.Code, rec.Body.String(), want)
 	}
 	for _, q := range []string{"?source=mouse", "?window=7d", "?sort=fastst", "?limit=abc", "?limit=0", "?limit=-1"} {
