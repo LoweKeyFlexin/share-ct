@@ -388,6 +388,23 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 	return entries, rows.Err()
 }
 
+// BoardPlayerCount is the complete matching population before the row limit.
+// The same best-per-player query keeps source/window/eligibility aligned with ranking.
+func (s *Store) BoardPlayerCount(ctx context.Context, source, window string) (int, error) {
+	if !ValidBoardSource(source) {
+		return 0, fmt.Errorf("board: unknown source %q", source)
+	}
+	q := `WITH best AS (` + bestPerPlayer(SortFastest, source) + `)
+        SELECT count(*) FROM best b JOIN players p ON p.id=b.player_id WHERE b.rn=1`
+	args := []any{source, s.since(window)}
+	if source == SourceAll {
+		args = []any{s.since(window)}
+	}
+	var count int
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&count)
+	return count, err
+}
+
 // since is the created_at floor for a window.
 func (s *Store) since(window string) int64 {
 	if window == Window30d {

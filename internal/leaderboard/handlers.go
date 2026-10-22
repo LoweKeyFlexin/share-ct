@@ -189,9 +189,10 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 // Board is the GET /v1/board response (design brief §D). Entries is always a JSON
 // array, never null.
 type Board struct {
-	Source  string  `json:"source"`
-	Window  string  `json:"window"`
-	Entries []Entry `json:"entries"`
+	Source      string  `json:"source"`
+	Window      string  `json:"window"`
+	Entries     []Entry `json:"entries"`
+	PlayerCount int     `json:"player_count"`
 }
 
 // board is GET /v1/board?source=touch|pad|keyboard&window=all|30d&sort=fastest|score&limit=50.
@@ -225,8 +226,17 @@ func (m *Module) recent(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal")
 		return
 	}
+	countSource := source
+	if countSource == "" {
+		countSource = SourceAll
+	}
+	count, err := m.store.BoardPlayerCount(r.Context(), countSource, WindowAll)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal")
+		return
+	}
 	w.Header().Set("Cache-Control", "no-cache")
-	httpx.WriteJSON(w, http.StatusOK, Board{Source: "recent", Window: WindowAll, Entries: entries})
+	httpx.WriteJSON(w, http.StatusOK, Board{Source: "recent", Window: WindowAll, Entries: entries, PlayerCount: count})
 }
 
 func (m *Module) board(w http.ResponseWriter, r *http.Request) {
@@ -272,6 +282,11 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal")
 		return
 	}
+	count, err := m.store.BoardPlayerCount(r.Context(), source, window)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal")
+		return
+	}
 	w.Header().Set("Cache-Control", "no-cache")
-	httpx.WriteJSON(w, http.StatusOK, Board{Source: source, Window: window, Entries: entries})
+	httpx.WriteJSON(w, http.StatusOK, Board{Source: source, Window: window, Entries: entries, PlayerCount: count})
 }
