@@ -395,7 +395,7 @@ func TestBoardWindowAndLimit(t *testing.T) {
 func TestBoardParamsAndEmpty(t *testing.T) {
 	hs := newHarness(t)
 	rec, _ := hs.do("GET", "/v1/board", "", "", "")
-	if want := `{"source":"touch","window":"all","entries":[]}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
+	if want := `{"source":"touch","window":"all","entries":[],"player_count":0}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("empty board: %d %q, want %q", rec.Code, rec.Body.String(), want)
 	}
 	for _, q := range []string{"?source=mouse", "?window=7d", "?sort=fastst", "?limit=abc", "?limit=0", "?limit=-1"} {
@@ -443,5 +443,35 @@ func TestBestsAndDeleteErasesSubmissions(t *testing.T) {
 	}
 	if rec, _ := hs.do("GET", "/v1/players/"+id, "", "", ""); rec.Code != 404 {
 		t.Errorf("profile after delete: %d", rec.Code)
+	}
+}
+
+func TestBoardPlayerCountPrecedesLimitAndHonorsSourceAndWindow(t *testing.T) {
+	hs := newHarness(t)
+	_, a := hs.player()
+	_, b := hs.player()
+	_, c := hs.player()
+	hs.submit(a, trial("old", "touch", []float64{200, 205, 210}, 0))
+	hs.now = hs.now.Add(31 * 24 * time.Hour)
+	hs.submit(b, trial("one", "touch", []float64{250, 255, 260}, 0))
+	hs.submit(b, trial("two", "touch", []float64{260, 265, 270}, 0))
+	hs.submit(c, trial("pad", "pad", []float64{300, 305, 310}, 0))
+	for _, tc := range []struct {
+		path string
+		want float64
+	}{
+		{"/v1/board?source=touch&window=all&limit=1", 2},
+		{"/v1/board?source=touch&window=30d&limit=1", 1},
+		{"/v1/board?source=all&window=all&limit=1", 3},
+		{"/v1/board?source=keyboard&window=all&limit=1", 0},
+		{"/v1/recent?source=touch&limit=1", 2},
+	} {
+		rec, body := hs.do("GET", tc.path, "", "", "127.0.0.1")
+		if rec.Code != 200 || body["player_count"] != tc.want {
+			t.Errorf("%s: %d %s, want count %v", tc.path, rec.Code, rec.Body.String(), tc.want)
+		}
+		if entries, ok := body["entries"].([]any); ok && len(entries) > 1 {
+			t.Errorf("%s exceeded limit", tc.path)
+		}
 	}
 }
