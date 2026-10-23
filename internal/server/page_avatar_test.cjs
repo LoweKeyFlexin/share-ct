@@ -130,3 +130,16 @@ test('rendered SVG definitions are unique across hats, painted copies and back g
   assert.equal(new Set(ids).size,ids.length,'painted copies need their own clip IDs');
   for(const match of all.matchAll(/url\(#([^)]*)\)/g))assert(ids.includes(match[1]),'dangling SVG clip '+match[1]);
 });
+
+
+test('single-color weapon variants tint only the matching back gear', () => {
+  const steel=bakedLook('3:puppet:2:0:greatsword::w0');
+  assert.equal(steel.back,'greatsword');
+  assert.deepEqual(steel.backPaint.line,[167,185,205]);
+  assert.equal(steel.backPaint.edge,null);
+  assert.equal(steel.gearPaint,undefined);
+  for(const code of ['w0','w1','w2']) {
+    assert(bakedLook('3:puppet:2:0:katana::'+code).backPaint);
+    assert.equal(bakedLook('3:puppet:2:0:joker-hat::'+code).gearPaint,undefined);
+  }
+});

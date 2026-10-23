@@ -64,7 +64,8 @@ def native_recipes(root):
     order_text = (root/'CTCore/LimitedCosmeticsSchedule.swift').read_text().split('static let authoredOrder:',1)[1].split('= [',1)[1].split(']',1)[0]
     order = re.findall(r'\.(\w+)',order_text)
     for i,name in enumerate(order): gear['t'+base36(i)] = {'line':palettes[name]['accent'],'edge':palettes[name]['accent2'],'fill':None}
-    allowed = {id:[code for code in gear if not code.startswith('p') and code!='m'] for id in ['knight-helmet','diving-helmet','scouter-visor','crash-helmet','switch-cap','mind-crown','joker-hat','katana','greatsword','bokken']}
+    allowed = {id:[code for code in gear if not code.startswith(('p','w')) and code!='m'] for id in ['knight-helmet','diving-helmet','scouter-visor','crash-helmet','switch-cap','mind-crown','joker-hat','katana','greatsword','bokken']}
+    for id in ['katana','greatsword']: allowed[id] += ['w0','w1','w2']
     allowed['pirate-hat'] = ['p0','p1','p2']; allowed['madhouse-hat'] = ['m']
     return {'skins':skins,'bodySkins':{'puppet-champ':{tokens['madHouse']+'1':{'line':[255,46,62],'edge':[61,134,255],'fill':[6,7,15]}}},
             'reserves':reserves,'gear':gear,'allowedGear':allowed}
