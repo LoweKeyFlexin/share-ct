@@ -148,7 +148,9 @@ jobs:
 
           board=$(curl -fsS localhost:8080/v1/board)
           echo "board: $board"
-          [ "$board" = '{"source":"touch","window":"all","entries":[]}' ]
+          # Assert the empty-board contract including the player count added with
+          # the expanded listings; object key order is not an API requirement.
+          jq -e '.source == "touch" and .window == "all" and .entries == [] and .player_count == 0' <<<"$board" >/dev/null
 
           page=$(curl -fsS localhost:8080/)
           # Assert what the page IS, not one exact string of its copy. This pinned the old
