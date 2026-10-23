@@ -185,36 +185,51 @@ const boardScriptSource = `(function () {
 
   // The head markup an item draws on one outfit's art (src = the fighter for Outfit 1, or
   // one of its outfits), or null when that art has none.
+  function catalogValue(map, id) {
+    return map && Object.prototype.hasOwnProperty.call(map, id) ? map[id] : null;
+  }
   function gearHead(src, id) {
-    if (!id) return null;
-    if (src.gear && src.gear[id] && src.gear[id].length) return src.gear[id];
-    if (id === 'pirate-hat' && src.hat && src.hat.length) return src.hat;
+    var paths = catalogValue(src.gear, id);
+    if (Array.isArray(paths) && paths.length) return paths;
+    if (id === 'pirate-hat' && Array.isArray(src.hat) && src.hat.length) return src.hat;
     return null;
   }
 
-  // The app's fallbacks (CTBoardAvatar.look): no descriptor, a malformed one or an unknown
-  // fighter draw Standard in its COLOR 1 (blue); an outfit this file has no art for draws
-  // Outfit 1; a colour index past the outfit's own list draws its first colour; the first
-  // head-gear id is worn when there is art for it; a bonus look the fighter does not have is
-  // ignored (bonus looks are Outfit 1 colours).
+  // Recipes only select our static catalog; unknown future values keep their known body/outfit.
   function avatarLook(raw, art) {
     if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw) || AVATAR_V3.test(raw))) return DEFAULT_LOOK;
     var f = raw.split(':');
     if (f[0] === '3' && f[4].split(',').length !== f[6].split(',').length) return DEFAULT_LOOK;
-    var fighter = art && art.fighters[f[1]];
+    var fighter = art && catalogValue(art.fighters, f[1]);
     if (!fighter) return DEFAULT_LOOK;
     var bonus = Number(f[0]) >= 2 && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0;
-    var outfit = !bonus && f[2] !== '1' && fighter.outfits && fighter.outfits[f[2]] ? f[2] : '1';
+    var outfit = !bonus && f[2] !== '1' && catalogValue(fighter.outfits, f[2]) ? f[2] : '1';
     var src = outfit === '1' ? fighter : fighter.outfits[outfit];
-    var colour = src.palette[Number(f[3])] || src.palette[0];
-    // The first gear id this file has head art for (every baked item is head gear), so new
-    // gear shows as soon as it is baked, with no list here to fall behind (#7853: the Scouter
-    // Visor, Crash Helmet and Switch Cap were baked into Ver .36 but this list still had three).
     var ids = f[4] ? f[4].split(',') : [];
-    var gear = null;
-    for (var i = 0; i < ids.length && !gear; i++) { if (gearHead(src, ids[i])) gear = ids[i]; }
-    var look = { body: f[1], outfit: outfit, gear: gear, fill: colour, outline: null, hat: gear === 'pirate-hat' };
+    var gear = null, back = null;
+    ids.forEach(function (id) {
+      if (!gear && gearHead(src, id)) gear = id;
+      if (!back && Array.isArray(catalogValue(fighter.back, id))) back = id;
+    });
+    var look = { body: f[1], outfit: outfit, gear: gear, fill: src.palette[Number(f[3])] || src.palette[0], outline: null, hat: gear === 'pirate-hat' };
     if (bonus) { look.fill = EX01.fill; look.outline = EX01.outline; }
+    var recipes = art.recipes || {};
+    var skin = catalogValue(catalogValue(recipes.bodySkins, f[1]), f[5]) || catalogValue(recipes.skins, f[5]);
+    var reserve = catalogValue(catalogValue(recipes.reserves, f[1]), f[5]);
+    if (skin) { look.fill = skin.line; look.outline = skin.edge || null; if (skin.fill) look.fillColor = skin.fill; }
+    else if (reserve) look.fill = reserve;
+    if (back) look.back = back;
+    if (f[0] === '3') {
+      var variants = f[6].split(',');
+      ids.forEach(function (id, index) {
+        var allowed = catalogValue(recipes.allowedGear, id);
+        var paint = catalogValue(recipes.gear, variants[index]);
+        if (!Array.isArray(allowed) || allowed.indexOf(variants[index]) < 0 || !paint || !paint.line) return;
+        // This code reward already has its authored red/blue vector paint, including the face mask.
+        if (id === gear && id !== 'madhouse-hat' && catalogValue(src.tint_masks, id)) look.gearPaint = paint;
+        if (id === back) look.backPaint = paint;
+      });
+    }
     return look;
   }
 
@@ -222,13 +237,21 @@ const boardScriptSource = `(function () {
   var avatarDefs = null;
   // One <symbol> per fighter, outfit and gear, built once from the baked markup.
   // The markup is our own static file, never player data.
-  function avatarSymbol(body, outfit, gear) {
-    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '');
+  function avatarSymbol(body, outfit, gear, back, painted) {
+    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '') + (painted ? '-tint' : '') + (back ? '-' + back : '');
     if (document.getElementById(id)) return id;
     var f = avatarArt.fighters[body];
     var src = outfit === '1' ? f : f.outfits[outfit];
-    var head = (gearHead(src, gear) || src.head).slice();
-    var markup = src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join('')
+    var head = ((painted && catalogValue(src.neutral_gear, gear)) || gearHead(src, gear) || src.head).slice();
+    if (painted && catalogValue(src.tint_masks, gear)) {
+      head = head.map(function (neutral, i) {
+        var mask = '{id}variant' + i;
+        var colored = neutral.split('{id}').join('{id}paint' + i + '-').split('var(--m').join('var(--gm').split('var(--o').join('var(--ge');
+        return neutral + '<clipPath id="' + mask + '"><path d="' + src.tint_masks[gear][i] + '" fill-rule="evenodd"/></clipPath>' +
+          '<g style="filter:var(--gear-glow,none)"><g clip-path="url(#' + mask + ')">' + colored + '</g></g>';
+      });
+    }
+    var markup = ((catalogValue(f.back, back) || []).join('') + src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join(''))
       .split('{id}').join(id + '-');
     var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + markup + '</svg>', 'image/svg+xml');
     var symbol = document.createElementNS(SVG_NS, 'symbol');
@@ -251,6 +274,14 @@ const boardScriptSource = `(function () {
     return 'rgb(' + Math.round(c[0] * k) + ',' + Math.round(c[1] * k) + ',' + Math.round(c[2] * k) + ')';
   }
 
+  // Native paper-ink mapping: fill at the art's #082D2B green, line at full green.
+  function paintRGB(line, fill, level) {
+    if (!fill) return rgb(line, level);
+    return 'rgb(' + line.map(function (v, i) {
+      return Math.max(0, Math.min(255, Math.round(fill[i] + (v - fill[i]) * (level - 45/255) / (1 - 45/255))));
+    }).join(',') + ')';
+  }
+
   // Tints exactly as the app does: each path's colour is its green level times the player
   // colour; draw layers 0 and 1 (key and line) take the outline colour when a two-tone
   // bonus look has one.
@@ -263,11 +294,18 @@ const boardScriptSource = `(function () {
     svg.setAttribute('viewBox', '0 0 ' + f.box[2] + ' ' + f.box[2]);
     svg.setAttribute('aria-hidden', 'true');
     f.levels.forEach(function (level, i) {
-      svg.style.setProperty('--m' + i, rgb(look.fill, level));
+      svg.style.setProperty('--m' + i, paintRGB(look.fill, look.fillColor, level));
       svg.style.setProperty('--o' + i, rgb(look.outline || look.fill, level));
+      var gp = look.gearPaint;
+      svg.style.setProperty('--gm' + i, paintRGB(gp ? gp.line : look.fill, gp ? gp.fill : look.fillColor, level));
+      svg.style.setProperty('--ge' + i, rgb(gp ? gp.edge || gp.line : look.outline || look.fill, level));
+      var bp = look.backPaint;
+      svg.style.setProperty('--bm' + i, paintRGB(bp ? bp.line : look.fill, bp ? bp.fill : look.fillColor, level));
+      svg.style.setProperty('--bo' + i, rgb(bp ? bp.edge || bp.line : look.outline || look.fill, level));
     });
+    if (look.gearPaint && look.gearPaint.glow) svg.style.setProperty('--gear-glow', 'drop-shadow(0 0 2.5px ' + rgb(look.gearPaint.edge || look.gearPaint.line, 1) + ')');
     var use = document.createElementNS(SVG_NS, 'use');
-    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear));
+    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear, look.back, !!look.gearPaint));
     svg.appendChild(use);
     tile.textContent = '';
     tile.appendChild(svg);
@@ -508,7 +546,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".46"
+const pageVersion = ".47"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

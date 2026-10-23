@@ -384,7 +384,7 @@ Board rows carry the player's avatar descriptor (`1:<fighter>:<outfit>:<color>[:
 `2:<fighter>:<outfit>:<color>:<gear,…>:<look>`, at most 64 bytes; anything else is stored and
 served as null). The website draws it as the app does, from
 `internal/server/static/board-avatars.json`: per fighter, its palette and one compact set of
-SVG paths cut to the app's headshot crop, with and without the pirate hat. No images. The page
+SVG paths cut to the app's headshot crop, with Outfit 2, head/back gear, permanent color recipes, and named gear colors. The deployed asset contains only SVG vectors and numeric colors. The page
 fetches it once from a content-addressed `/assets/board-avatars-<hash>.json` (cached immutably).
 
 Regenerate it when the fighter-engine-kit pin, the pirate-hat art, the roster or the colour
@@ -392,8 +392,11 @@ catalog changes in the app repo (both sources are private; only the baked paths 
 
 ```sh
 go run ./cmd/avatarbake -kit <fighter-engine-kit checkout> -fgc <controller-tester-fgc checkout>
+python3 tools/avatar-cosmetics.py --fgc <controller-tester-fgc checkout>
 CT_KIT=<kit> CT_FGC=<fgc> go test ./internal/avatarart   # the committed file matches the sources
 ```
+
+The second authoring step requires Python Pillow and `rsvg-convert` (librsvg); neither is a server dependency. It derives compact SVG masks so gear recoloring preserves the face, then discards its temporary raster data. Recipes use the existing bounded v3 descriptor and do not grant ownership or enable shop offers. This bake uses native app revision `ffa5b7d4436063e8ea0abe3ccdefb115bbd9a22f` and fighter-engine-kit `7007df2e70ae26c1e2ca0f0e6416582f3240717a`.
 
 The crop constants live in one place, `internal/avatarart/bake.go`.
 

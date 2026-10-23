@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -191,6 +192,18 @@ func TestCommittedBakeMatchesSources(t *testing.T) {
 		Colours:      filepath.Join(fgc, "CTCore/DrillsColourCatalog.swift"),
 		Cosmetics:    cosmeticsDir(kit),
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := filepath.Join(t.TempDir(), "avatars.json")
+	if err := os.WriteFile(asset, got, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("python3", "../../tools/avatar-cosmetics.py", "--fgc", fgc, "--asset", asset)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("recipe bake: %v\n%s", err, output)
+	}
+	got, err = os.ReadFile(asset)
 	if err != nil {
 		t.Fatal(err)
 	}
