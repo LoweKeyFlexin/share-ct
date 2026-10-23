@@ -181,6 +181,8 @@ const boardScriptSource = `(function () {
   var AVATAR_V1 = /^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?$/;
   var AVATAR_V2 = /^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$/;
 
+  var AVATAR_V3 = /^3:[a-z0-9-]{1,32}:[1-9]:[0-9]:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3}:[a-z0-9-]{0,32}:[a-z0-9-]{1,3}(,[a-z0-9-]{1,3}){0,3}$/;
+
   // The head markup an item draws on one outfit's art (src = the fighter for Outfit 1, or
   // one of its outfits), or null when that art has none.
   function gearHead(src, id) {
@@ -196,11 +198,12 @@ const boardScriptSource = `(function () {
   // head-gear id is worn when there is art for it; a bonus look the fighter does not have is
   // ignored (bonus looks are Outfit 1 colours).
   function avatarLook(raw, art) {
-    if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw))) return DEFAULT_LOOK;
+    if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw) || AVATAR_V3.test(raw))) return DEFAULT_LOOK;
     var f = raw.split(':');
+    if (f[0] === '3' && f[4].split(',').length !== f[6].split(',').length) return DEFAULT_LOOK;
     var fighter = art && art.fighters[f[1]];
     if (!fighter) return DEFAULT_LOOK;
-    var bonus = f[0] === '2' && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0;
+    var bonus = Number(f[0]) >= 2 && f[5] === EX01.id && (fighter.bonus || []).indexOf(EX01.id) >= 0;
     var outfit = !bonus && f[2] !== '1' && fighter.outfits && fighter.outfits[f[2]] ? f[2] : '1';
     var src = outfit === '1' ? fighter : fighter.outfits[outfit];
     var colour = src.palette[Number(f[3])] || src.palette[0];
@@ -505,7 +508,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".45"
+const pageVersion = ".46"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
