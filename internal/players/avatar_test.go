@@ -169,3 +169,20 @@ func readAvatar(t *testing.T, hs *harness, id string) *string {
 	}
 	return &v.String
 }
+
+func TestCompactGearVariantDescriptorsKeepTheExistingByteCap(t *testing.T) {
+	for _, raw := range []string{"3:puppet:1:0:pirate-hat::p0", "3:puppet:2:0:pirate-hat,katana:t123456780:p1,t2"} {
+		if got := NormalizeAvatar(&raw); got == nil || *got != raw {
+			t.Fatalf("valid compact look lost: %s", raw)
+		}
+	}
+	for _, raw := range []string{"3:puppet:1:0:pirate-hat::p0,t2", "3:puppet:1:0:pirate-hat::<x>", "3:puppet:1:0:pirate-hat::long", "3:puppet:1:0:::c"} {
+		if NormalizeAvatar(&raw) != nil {
+			t.Fatalf("invalid descriptor accepted: %s", raw)
+		}
+	}
+	raw := "3:" + strings.Repeat("a", 32) + ":1:0:pirate-hat,katana:t123456780:p1,t2"
+	if NormalizeAvatar(&raw) != nil {
+		t.Fatal("oversized descriptor accepted")
+	}
+}

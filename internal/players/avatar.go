@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
 )
@@ -25,12 +26,22 @@ var avatarV1 = regexp.MustCompile(`^1:[a-z0-9-]{1,32}:[1-9]:[0-9](:[a-z0-9-]{1,3
 // every other field, so the grammar still cannot carry free text.
 var avatarV2 = regexp.MustCompile(`^2:[a-z0-9-]{1,32}:[1-9]:[0-9]:([a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3})?:[a-z0-9-]{1,32}$`)
 
+// avatarV3 appends positional compact gear colour recipes after the unchanged
+// look field. It remains the same bounded avatar value, never a new player field.
+var avatarV3 = regexp.MustCompile(`^3:[a-z0-9-]{1,32}:[1-9]:[0-9]:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3}:[a-z0-9-]{0,32}:[a-z0-9-]{1,3}(,[a-z0-9-]{1,3}){0,3}$`)
+
 // NormalizeAvatar returns the descriptor to store, or nil. Anything that is not a valid
-// version-1 or version-2 descriptor (wrong shape, unknown version, oversize) becomes nil: "no avatar",
+// version-1, version-2 or version-3 descriptor (wrong shape, unknown version, oversize) becomes nil: "no avatar",
 // never an error, so a newer or broken client degrades to the default picture.
 func NormalizeAvatar(raw *string) *string {
-	if raw == nil || len(*raw) > MaxAvatarBytes || !(avatarV1.MatchString(*raw) || avatarV2.MatchString(*raw)) {
+	if raw == nil || len(*raw) > MaxAvatarBytes || !(avatarV1.MatchString(*raw) || avatarV2.MatchString(*raw) || avatarV3.MatchString(*raw)) {
 		return nil
+	}
+	if avatarV3.MatchString(*raw) {
+		fields := strings.Split(*raw, ":")
+		if len(strings.Split(fields[4], ",")) != len(strings.Split(fields[6], ",")) {
+			return nil
+		}
 	}
 	v := *raw
 	return &v

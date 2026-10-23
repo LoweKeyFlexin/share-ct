@@ -65,3 +65,12 @@ test('any baked head gear shows, EX01 included; the first id with art wins', () 
   assert.equal(look('1:puppet:1:0:top-hat,scouter-visor').gear, 'scouter-visor');
   assert.equal(look('1:puppet:1:0:crash-helmet').gear, null); // no art for it in this fixture
 });
+
+// New gear recipes preserve the old body/outfit fallback even before this
+// static art bundle contains a later cosmetic. They never reset to default.
+test('v3 preserves fighter, outfit and known hat with bounded positional recipes', () => {
+ assert.equal(look('3:puppet-ronin:2:1:diving-helmet::t2').body, 'puppet-ronin');
+ assert.equal(look('3:puppet-ronin:2:1:diving-helmet::t2').outfit, '2');
+ assert.equal(look('3:puppet:1:1:pirate-hat::p1').gear, 'pirate-hat');
+ assert.deepEqual(look('3:puppet:1:1:pirate-hat::p1,t2'), DEFAULT);
+});
