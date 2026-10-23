@@ -540,7 +540,9 @@ type Fighter struct {
 	Hat   []string `json:"hat,omitempty"`
 	// Gear is the kit's head gear on Outfit 1 (Knight and Diving Helmets): head-slot markup
 	// filled into Parts exactly like Hat. The pirate hat stays in Hat.
-	Gear map[string][]string `json:"gear,omitempty"`
+	Gear     map[string][]string `json:"gear,omitempty"`
+	TintGear map[string][]string `json:"tint_gear,omitempty"`
+	Back     map[string][]string `json:"back,omitempty"`
 	// Outfits are the fighter's other outfits by number ("2"): their own ten colours, their
 	// own shared markup (an outfit redraws body parts) and their heads, bare and with gear.
 	// The crop (Box) and the levels are the fighter's, shared by every outfit, as in the app.
@@ -549,16 +551,18 @@ type Fighter struct {
 
 // OutfitArt is one outfit of one fighter.
 type OutfitArt struct {
-	Palette [][3]int            `json:"palette"`
-	Parts   []string            `json:"parts"`
-	Head    []string            `json:"head"`
-	Gear    map[string][]string `json:"gear,omitempty"`
+	Palette  [][3]int            `json:"palette"`
+	Parts    []string            `json:"parts"`
+	Head     []string            `json:"head"`
+	Gear     map[string][]string `json:"gear,omitempty"`
+	TintGear map[string][]string `json:"tint_gear,omitempty"`
 }
 
 // Output is the whole static asset.
 type Output struct {
 	Format   string             `json:"format"`
 	Fighters map[string]Fighter `json:"fighters"`
+	Recipes  json.RawMessage    `json:"recipes,omitempty"`
 }
 
 // Bake produces the asset. It is deterministic: same inputs, same bytes.
@@ -766,7 +770,8 @@ type writer struct {
 	clipN      map[string]int
 	// fixed is the gear being drawn when it has its own colour (the Mind Crown): its head
 	// slots get a second, mask-clipped copy in that colour on top, and a halo behind.
-	fixed *fixedSpec
+	fixed    *fixedSpec
+	authored bool
 }
 
 func (w *writer) level(hex string) (int, error) {
@@ -844,7 +849,7 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 	// The gear's own colour goes on the head's OUTLINE slots only (key, line): the fill keeps
 	// the fighter's colour, so the crown never floods the head (Aaron, 2026-10-20: "green still
 	// bleeding into the oni"), exactly as the app draws it.
-	if w.fixed != nil && isHead(sl.ID) && sl.ID != "head-fill" {
+	if w.fixed != nil && isHead(sl.ID) && (sl.ID != "head-fill" || w.fixed.authored) {
 		if fixedMask, err = pathData(w.fixed.mask.Silhouette); err != nil {
 			return err
 		}
@@ -864,6 +869,8 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 		fmt.Fprintf(b, `<clipPath id="%s"><path d="%s"/></clipPath><g clip-path="url(#%s)">`, mid, fixedMask, mid)
 		levels := w.levelList
 		colour := func(i int) string { return rgbCSS(w.fixed.rgb, levels[i]) }
+		w.authored = w.fixed.authored
+		defer func() { w.authored = false }()
 		if err := w.layers(b, m, v, sil, colour); err != nil {
 			return err
 		}
@@ -871,6 +878,13 @@ func (w *writer) part(b *strings.Builder, p *posed, s int, art artFunc) error {
 	}
 	b.WriteString(`</g>`)
 	return nil
+}
+
+func (w *writer) paint(original, tinted string) string {
+	if w.authored {
+		return original
+	}
+	return tinted
 }
 
 // nextID is the next per-symbol id ("{id}" is replaced per fighter symbol by the page).
@@ -916,7 +930,7 @@ func (w *writer) layers(b *strings.Builder, m Affine, v VecSlot, sil string, col
 				return err
 			}
 			fmt.Fprintf(b, `<path clip-path="url(#%s)" d="%s" style="fill:none;stroke:%s" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"/>`,
-				clipID, d.String(), colour(li), num(*l.Width, 2))
+				clipID, d.String(), w.paint(*l.Stroke, colour(li)), num(*l.Width, 2))
 			continue
 		}
 		if l.Fill == nil {
@@ -936,9 +950,9 @@ func (w *writer) layers(b *strings.Builder, m Affine, v VecSlot, sil string, col
 				return err
 			}
 			fmt.Fprintf(b, `<path d="%s" style="fill:%s;stroke:%s"%s stroke-width="%s" stroke-linejoin="round"/>`,
-				sil, colour(fi), colour(si), opacity, num(*l.Width, 2))
+				sil, w.paint(*l.Fill, colour(fi)), w.paint(*l.Stroke, colour(si)), opacity, num(*l.Width, 2))
 		} else {
-			fmt.Fprintf(b, `<path d="%s" style="fill:%s"%s/>`, sil, colour(fi), opacity)
+			fmt.Fprintf(b, `<path d="%s" style="fill:%s"%s/>`, sil, w.paint(*l.Fill, colour(fi)), opacity)
 		}
 	}
 	return nil

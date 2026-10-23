@@ -49,10 +49,12 @@ type kitGearDoc struct {
 	// head slots take Hex instead of the player colour, with a soft halo when Glow is set, as the
 	// app draws it (controller-tester-fgc#7853).
 	FixedTint *struct {
-		Hex  string `json:"hex"`
-		Glow bool   `json:"glow"`
+		Hex      string `json:"hex"`
+		Glow     bool   `json:"glow"`
+		Authored bool   `json:"authored_colors"`
 	} `json:"fixed_tint"`
-	TintMasks *struct {
+	Attachments map[string][]slot `json:"attachments"`
+	TintMasks   *struct {
 		Bodies  map[string]gearArt            `json:"bodies"`
 		Outfits map[string]map[string]gearArt `json:"outfits"`
 	} `json:"tint_masks"`
@@ -60,9 +62,10 @@ type kitGearDoc struct {
 
 // fixedSpec is a fixed-tint item's colour and its mask on one body and outfit.
 type fixedSpec struct {
-	rgb  [3]int
-	glow bool
-	mask VecSlot
+	rgb      [3]int
+	glow     bool
+	authored bool
+	mask     VecSlot
 }
 
 // headGear is one item's head art on one body for one outfit, with the vectors it reads.
@@ -108,6 +111,41 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 			return err
 		}
 		dir := filepath.Dir(at(g.Resource))
+		if attachments := doc.Attachments[body]; len(attachments) > 0 {
+			dressedBody := ch
+			dressedBody.Slots = append(append([]slot(nil), ch.Slots...), attachments...)
+			pose, err := pose(sk, dressedBody, idle, nil)
+			if err != nil {
+				return err
+			}
+			var vectors vecDoc
+			if err := readJSON(filepath.Join(dir, body, "parts.vec.json"), &vectors); err != nil {
+				return err
+			}
+			lookup := func(s slot) (VecSlot, float64, bool) {
+				v, ok := vectors.Slots[filepath.Base(s.Image)]
+				return v, vectors.RasterPixelsPerDesignUnit, ok
+			}
+			w.clipN, w.clipPrefix = map[string]int{}, "b"
+			var parts []string
+			// Additive back slots are outside the animated body draw groups.
+			// Their transforms are resolved against the same idle bones.
+			for index := range pose.r.slots {
+				if !strings.HasPrefix(pose.r.slots[index].ID, "back-") {
+					continue
+				}
+				var b strings.Builder
+				if err := w.part(&b, pose, index, lookup); err != nil {
+					return err
+				}
+				parts = append(parts, strings.ReplaceAll(strings.ReplaceAll(b.String(), "var(--m", "var(--bm"), "var(--o", "var(--bo"))
+			}
+			if fi.Back == nil {
+				fi.Back = map[string][]string{}
+			}
+			fi.Back[g.ID] = parts
+		}
+
 		load := func(art map[string]gearArt) (*headGear, error) {
 			if len(art) == 0 {
 				return nil, nil
@@ -139,7 +177,7 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 			if !ok {
 				return fmt.Errorf("%s: no vector art for %s", g.ID, mask.Image)
 			}
-			h.fixed = &fixedSpec{rgb: rgb, glow: doc.FixedTint.Glow, mask: v}
+			h.fixed = &fixedSpec{rgb: rgb, glow: doc.FixedTint.Glow, authored: doc.FixedTint.Authored, mask: v}
 			return nil
 		}
 		maskFor := func(outfit string) *gearArt {
@@ -235,7 +273,7 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 	// Outfit 1 + the kit's helmets (the pirate hat is already Hat).
 	for _, id := range items {
 		g := gearFor[id][""]
-		if id == framingHat || g == nil {
+		if g == nil {
 			continue
 		}
 		shared, head, err := dressed(nil, nil, g)
@@ -249,6 +287,18 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 			fi.Gear = map[string][]string{}
 		}
 		fi.Gear[id] = head
+		saved := g.fixed
+		g.fixed = nil
+		_, neutral, err := dressed(nil, nil, g)
+		g.fixed = saved
+		if err != nil {
+			return err
+		}
+		if fi.TintGear == nil {
+			fi.TintGear = map[string][]string{}
+		}
+		fi.TintGear[id] = neutral
+
 	}
 
 	for _, o := range cat.Outfits {
@@ -304,6 +354,18 @@ func bakeCosmetics(in Inputs, sk skeleton, ch character, idle clip, w *writer, f
 				art.Gear = map[string][]string{}
 			}
 			art.Gear[id] = head
+			saved := g.fixed
+			g.fixed = nil
+			_, neutral, err := dressed(doc.Replaces, &vec, g)
+			g.fixed = saved
+			if err != nil {
+				return err
+			}
+			if art.TintGear == nil {
+				art.TintGear = map[string][]string{}
+			}
+			art.TintGear[id] = neutral
+
 		}
 		if fi.Outfits == nil {
 			fi.Outfits = map[string]OutfitArt{}

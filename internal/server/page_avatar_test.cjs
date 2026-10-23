@@ -74,3 +74,59 @@ test('v3 preserves fighter, outfit and known hat with bounded positional recipes
  assert.equal(look('3:puppet:1:1:pirate-hat::p1').gear, 'pirate-hat');
  assert.deepEqual(look('3:puppet:1:1:pirate-hat::p1,t2'), DEFAULT);
 });
+
+const baked = JSON.parse(fs.readFileSync(__dirname + '/static/board-avatars.json', 'utf8'));
+const bakedLook = raw => JSON.parse(JSON.stringify(context.avatarLook(raw, baked)));
+const token = raw => { let h=2166136261; for(const c of Buffer.from(raw)) h=Math.imul(h^c,16777619)>>>0; return 't'+h.toString(16).padStart(8,'0'); };
+
+test('baked recipes retain every fighter and Outfit 2, reserve colors and permanent skin colors', () => {
+  assert.equal(Object.keys(baked.fighters).length,14);
+  for(const body of Object.keys(baked.fighters)) {
+    assert.equal(bakedLook(`1:${body}:2:0`).outfit,'2');
+    assert.equal(bakedLook(`2:${body}:2:0::${token('moneymatch')}0`).outfit,'2');
+    assert.deepEqual(bakedLook(`2:${body}:2:0::${token('moneymatch')}0`).fill,[10,209,119]);
+  }
+  assert.deepEqual(bakedLook('2:puppet:2:0::c0').fill,baked.recipes.reserves.puppet.c0);
+  assert.equal(bakedLook('2:puppet:2:0::c0').outfit,'2');
+  assert.deepEqual(bakedLook(`2:puppet-champ:2:0::${token('madhouse')}1`).fill,[255,46,62]);
+});
+
+test('head and back paints use their positional native recipes without coloring the face', () => {
+  const look=bakedLook('3:puppet:2:0:pirate-hat,katana::p1,t0');
+  assert.equal(look.gear,'pirate-hat'); assert.equal(look.back,'katana'); assert.equal(look.outfit,'2');
+  assert.deepEqual(look.gearPaint.line,[67,217,255]);
+  assert.deepEqual(look.backPaint.line,baked.recipes.gear.t0.line);
+  assert.deepEqual(look.fill,baked.fighters.puppet.outfits['2'].palette[0]);
+  assert.equal(bakedLook('3:puppet:2:0:pirate-hat::t0').gearPaint,undefined,'Pirate has only its three named colors');
+  assert.equal(bakedLook('3:puppet:2:0:pirate-hat::p9').gearPaint,undefined);
+  for(const fighter of Object.values(baked.fighters)) for(const src of [fighter,...Object.values(fighter.outfits||{})]) {
+    for(const id of ['joker-hat','madhouse-hat','pirate-hat','mind-crown']) assert(src.gear[id].length>0,id);
+    assert(src.tint_masks['pirate-hat'].some(Boolean));
+  }
+  for(const fighter of Object.values(baked.fighters)) {
+    for(const id of ['katana','greatsword','bokken']) {
+      assert(fighter.back[id].length>0,id+' must render outside body draw groups');
+      assert(fighter.back[id].join('').includes('var(--bm'),id+' must accept its own color');
+    }
+  }
+});
+
+test('unrecognized prototype-like catalog ids stay safe defaults', () => {
+  assert.deepEqual(bakedLook('1:constructor:1:0'),DEFAULT);
+  assert.equal(bakedLook('3:puppet:2:0:constructor::p0').gear,null);
+  assert.equal(bakedLook('2:puppet:2:0::constructor').outfit,'2');
+});
+
+test('rendered SVG definitions are unique across hats, painted copies and back gear', () => {
+  const markups=[];const symbols=new Map();
+  const node=()=>({setAttribute(key,value){if(key==='id')symbols.set(value,this);},appendChild(){}});
+  const render=vm.createContext({avatarArt:baked,document:{getElementById:id=>symbols.get(id),createElementNS:node,importNode:n=>n,body:{appendChild(){}}},DOMParser:class {parseFromString(markup){markups.push(markup);return {documentElement:{childNodes:[]}};}}});
+  vm.runInContext(source.slice(start,source.indexOf('  function avatarTile',start))+'\nthis.render=avatarSymbol;',render);
+  for(const back of ['katana','greatsword','bokken'])render.render('puppet','2','pirate-hat',back,true);
+  render.render('puppet','2','mind-crown',null,true);
+  const all=markups.join('');
+  assert(!all.includes('{id}'),'all head and back placeholders must be expanded');
+  const ids=[...all.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+  assert.equal(new Set(ids).size,ids.length,'painted copies need their own clip IDs');
+  for(const match of all.matchAll(/url\(#([^)]*)\)/g))assert(ids.includes(match[1]),'dangling SVG clip '+match[1]);
+});
