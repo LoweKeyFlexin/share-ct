@@ -143,3 +143,21 @@ test('single-color weapon variants tint only the matching back gear', () => {
     assert.equal(bakedLook('3:puppet:2:0:joker-hat::'+code).gearPaint,undefined);
   }
 });
+
+
+test('Deep Blue is one flat permanent paint on every fighter and both outfits', () => {
+  assert.deepEqual(baked.recipes.skins.f000000010, {line:[46,83,183],edge:null,fill:null});
+  for(const body of Object.keys(baked.fighters)) for(const outfit of ['1','2']) {
+    const blue=bakedLook(`2:${body}:${outfit}:0::f000000010`);
+    assert.equal(blue.body,body);
+    assert.equal(blue.outfit,outfit);
+    assert.deepEqual(blue.fill,[46,83,183]);
+    assert.equal(blue.outline,null);
+    assert.equal(blue.fillColor,undefined);
+    const dressed=bakedLook(`3:${body}:${outfit}:0:knight-helmet,katana:f000000010:t0,w0`);
+    assert.deepEqual(dressed.fill,[46,83,183]);
+    assert.equal(dressed.gear,'knight-helmet');
+    assert.equal(dressed.back,'katana');
+    assert.deepEqual(dressed.backPaint.line,[167,185,205]);
+  }
+});

@@ -45,6 +45,9 @@ def native_recipes(root):
         recipes = [(a,None,None), (a,b,None), (a,b,dim(palette['accent3'],.4)),
                    (palette['bg'],a,a), (palette['ink'],a,[0,0,0]), (a,[255,201,60],dim(a,.18)), (b,a,None)]
         for i,(line,edge,fill) in enumerate(recipes): skins[token+str(i)] = {'line':line,'edge':edge,'fill':fill}
+    # Stable flat-color recipe introduced by the shared Cold Front drop.
+    # Numeric metadata only; the public server never carries native app source.
+    skins["f000000010"] = {"line": [46,83,183], "edge": None, "fill": None}
     colors_text = (root/'CTCore/DrillsColourCatalog.swift').read_text()
     colors = {m[1]:[float(m[j]) for j in range(2,5)] for m in re.finditer(r'\.init\(id:\s*"([a-z0-9-]+)",[^)]*?rgb:\s*CTRGB\(r:\s*([0-9.]+),\s*g:\s*([0-9.]+),\s*b:\s*([0-9.]+)\)', colors_text)}
     reserves_text = (root/'CTCore/ReservedCosmetics.swift').read_text()
