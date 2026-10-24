@@ -206,10 +206,11 @@ const boardScriptSource = `(function () {
     var outfit = !bonus && f[2] !== '1' && catalogValue(fighter.outfits, f[2]) ? f[2] : '1';
     var src = outfit === '1' ? fighter : fighter.outfits[outfit];
     var ids = f[4] ? f[4].split(',') : [];
-    var gear = null, back = null;
+    var gear = null, back = null, shoulder = null;
     ids.forEach(function (id) {
       if (!gear && gearHead(src, id)) gear = id;
       if (!back && Array.isArray(catalogValue(fighter.back, id))) back = id;
+      if (!shoulder && Array.isArray(catalogValue(fighter.shoulder, id))) shoulder = id;
     });
     var look = { body: f[1], outfit: outfit, gear: gear, fill: src.palette[Number(f[3])] || src.palette[0], outline: null, hat: gear === 'pirate-hat' };
     if (bonus) { look.fill = EX01.fill; look.outline = EX01.outline; }
@@ -219,6 +220,7 @@ const boardScriptSource = `(function () {
     if (skin) { look.fill = skin.line; look.outline = skin.edge || null; if (skin.fill) look.fillColor = skin.fill; }
     else if (reserve) look.fill = reserve;
     if (back) look.back = back;
+    if (shoulder) look.shoulder = shoulder;
     if (f[0] === '3') {
       var variants = f[6].split(',');
       ids.forEach(function (id, index) {
@@ -237,8 +239,8 @@ const boardScriptSource = `(function () {
   var avatarDefs = null;
   // One <symbol> per fighter, outfit and gear, built once from the baked markup.
   // The markup is our own static file, never player data.
-  function avatarSymbol(body, outfit, gear, back, painted) {
-    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '') + (painted ? '-tint' : '') + (back ? '-' + back : '');
+  function avatarSymbol(body, outfit, gear, back, painted, shoulder) {
+    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '') + (painted ? '-tint' : '') + (back ? '-' + back : '') + (shoulder ? '-' + shoulder : '');
     if (document.getElementById(id)) return id;
     var f = avatarArt.fighters[body];
     var src = outfit === '1' ? f : f.outfits[outfit];
@@ -251,7 +253,7 @@ const boardScriptSource = `(function () {
           '<g style="filter:var(--gear-glow,none)"><g clip-path="url(#' + mask + ')">' + colored + '</g></g>';
       });
     }
-    var markup = ((catalogValue(f.back, back) || []).join('') + src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join(''))
+    var markup = ((catalogValue(f.back, back) || []).join('') + (catalogValue(f.shoulder, shoulder) || []).join('') + src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join(''))
       .split('{id}').join(id + '-');
     var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + markup + '</svg>', 'image/svg+xml');
     var symbol = document.createElementNS(SVG_NS, 'symbol');
@@ -305,7 +307,7 @@ const boardScriptSource = `(function () {
     });
     if (look.gearPaint && look.gearPaint.glow) svg.style.setProperty('--gear-glow', 'drop-shadow(0 0 2.5px ' + rgb(look.gearPaint.edge || look.gearPaint.line, 1) + ')');
     var use = document.createElementNS(SVG_NS, 'use');
-    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear, look.back, !!look.gearPaint));
+    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear, look.back, !!look.gearPaint, look.shoulder));
     svg.appendChild(use);
     tile.textContent = '';
     tile.appendChild(svg);
@@ -546,7 +548,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".49"
+const pageVersion = ".50"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
