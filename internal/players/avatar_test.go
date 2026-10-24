@@ -186,3 +186,14 @@ func TestCompactGearVariantDescriptorsKeepTheExistingByteCap(t *testing.T) {
 		t.Fatal("oversized descriptor accepted")
 	}
 }
+
+func TestShoulderCompanionUsesExistingBoundedGearDescriptor(t *testing.T) {
+	for _, raw := range []string{
+		"1:puppet:1:0:charcoal-cat",
+		"3:puppet:2:0:pirate-hat,katana,charcoal-cat::p1,w0,c",
+	} {
+		if normalized := NormalizeAvatar(&raw); normalized == nil || *normalized != raw {
+			t.Fatalf("companion descriptor rejected: %s", raw)
+		}
+	}
+}

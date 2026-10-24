@@ -416,7 +416,7 @@ func frame0(r *rig, c clip) ([]*offset, [][]int, error) {
 
 // resolve returns each slot's image-pixel → canvas transform and the draw sequence, with
 // the rig root at the canvas origin, one canvas point per design unit, facing right.
-func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int) {
+func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int, []Affine) {
 	rigToCanvas := Affine{1, 0, 0, -1, 0, 0}
 	boneTo := make([]Affine, len(r.bones))
 	lengths := make([]float64, len(r.bones))
@@ -499,7 +499,7 @@ func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int) {
 			}
 		}
 	}
-	return toCanvas, seq
+	return toCanvas, seq, boneTo
 }
 
 // ---------------------------------------------------------------------------------------
@@ -543,6 +543,7 @@ type Fighter struct {
 	Gear     map[string][]string `json:"gear,omitempty"`
 	TintGear map[string][]string `json:"tint_gear,omitempty"`
 	Back     map[string][]string `json:"back,omitempty"`
+	Shoulder map[string][]string `json:"shoulder,omitempty"`
 	// Outfits are the fighter's other outfits by number ("2"): their own ten colours, their
 	// own shared markup (an outfit redraws body parts) and their heads, bare and with gear.
 	// The crop (Box) and the levels are the fighter's, shared by every outfit, as in the app.
@@ -673,6 +674,9 @@ func Bake(in Inputs) (*Output, error) {
 				return nil, fmt.Errorf("%s: %w", f.BodyID, err)
 			}
 		}
+		if cat := shoulderCat(bare, box); cat != "" {
+			fi.Shoulder = map[string][]string{"charcoal-cat": {cat}}
+		}
 		fi.Levels = w.levelList
 		out.Fighters[f.BodyID] = fi
 	}
@@ -698,10 +702,11 @@ func Crop(bareFigure, head Rect, hatHead *Rect, unitsPerPx float64) Rect {
 }
 
 type posed struct {
-	r        *rig
-	toCanvas []Affine
-	seq      []int
-	bounds   Rect // union of every drawn part's image rect (the app's clip.bounds)
+	r            *rig
+	toCanvas     []Affine
+	boneToCanvas []Affine
+	seq          []int
+	bounds       Rect // union of every drawn part's image rect (the app's clip.bounds)
 }
 
 // pose resolves idle frame 0, with `gear` (slot id → replacement art) dressed in the way
@@ -730,8 +735,8 @@ func pose(sk skeleton, ch character, idle clip, gear map[string]gearArt) (*posed
 	if err != nil {
 		return nil, err
 	}
-	toCanvas, seq := r.resolve(offs, order)
-	p := &posed{r: r, toCanvas: toCanvas, seq: seq, bounds: emptyRect()}
+	toCanvas, seq, boneTo := r.resolve(offs, order)
+	p := &posed{r: r, toCanvas: toCanvas, boneToCanvas: boneTo, seq: seq, bounds: emptyRect()}
 	for _, s := range seq {
 		p.bounds = p.bounds.union(p.partRect(s))
 	}

@@ -161,3 +161,40 @@ test('Deep Blue is one flat permanent paint on every fighter and both outfits', 
     assert.deepEqual(dressed.backPaint.line,[167,185,205]);
   }
 });
+
+test('charcoal shoulder cat preserves both outfits, head/back gear and independent paints', () => {
+  for(const body of Object.keys(baked.fighters)) for(const outfit of ['1','2']) {
+    const cat=bakedLook(`1:${body}:${outfit}:0:charcoal-cat`);
+    assert.equal(cat.body,body); assert.equal(cat.outfit,outfit);
+    assert.equal(cat.shoulder,'charcoal-cat'); assert.equal(cat.gear,null);
+    assert.equal(cat.gearPaint,undefined); assert.equal(cat.backPaint,undefined);
+    const paths=baked.fighters[body].shoulder['charcoal-cat'].join('');
+    for(const color of ['#14121a','#6e6878','#8fe36b','#08070c'])assert(paths.includes(color),color);
+    assert(!paths.includes('var(--'),'cat is fixed paint, not a theme recipe');
+  }
+  const combined=bakedLook('3:puppet:2:0:pirate-hat,katana,charcoal-cat::p1,w0,c');
+  assert.equal(combined.gear,'pirate-hat'); assert.equal(combined.back,'katana');
+  assert.equal(combined.shoulder,'charcoal-cat');
+  assert.deepEqual(combined.gearPaint.line,[67,217,255]);
+  assert.deepEqual(combined.backPaint.line,[167,185,205]);
+  assert.deepEqual(combined.fill,baked.fighters.puppet.outfits['2'].palette[0]);
+  assert.equal(bakedLook('1:puppet:2:0:unknown-cat').shoulder,undefined);
+});
+
+test('cat symbols stay separate, behind the body, with unique gradient IDs', () => {
+ const markups=[];const symbols=new Map();
+ const node=()=>({setAttribute(key,value){if(key==='id')symbols.set(value,this);},appendChild(){}});
+ const render=vm.createContext({avatarArt:baked,document:{getElementById:id=>symbols.get(id),createElementNS:node,importNode:n=>n,body:{appendChild(){}}},DOMParser:class {parseFromString(markup){markups.push(markup);return {documentElement:{childNodes:[]}};}}});
+ vm.runInContext(source.slice(start,source.indexOf('  function avatarTile',start))+'\nthis.render=avatarSymbol;',render);
+ const bare=render.render('puppet','2','pirate-hat','katana',true);
+ const cat=render.render('puppet','2','pirate-hat','katana',true,'charcoal-cat');
+ assert.notEqual(bare,cat,'symbol cache must include shoulder gear');
+ assert.equal(markups.length,2);
+ const markup=markups[1];
+ assert(markup.includes('#8fe36b')); assert(!markups[0].includes('#8fe36b'));
+ assert(markup.indexOf('#8fe36b')<markup.indexOf('var(--m'),'companion precedes body draw groups');
+ const all=markups.join('');assert(!all.includes('{id}'));
+ const ids=[...all.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+ assert.equal(new Set(ids).size,ids.length);
+ for(const match of all.matchAll(/url\(#([^)]*)\)/g))assert(ids.includes(match[1]));
+});

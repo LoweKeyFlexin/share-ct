@@ -398,6 +398,8 @@ CT_KIT=<kit> CT_FGC=<fgc> go test ./internal/avatarart   # the committed file ma
 
 The second authoring step requires Python Pillow and `rsvg-convert` (librsvg); neither is a server dependency. It derives compact SVG masks so gear recoloring preserves the face, then discards its temporary raster data. Recipes use the existing bounded v3 descriptor and do not grant ownership or enable shop offers. This bake uses native app revision `070e63fa3` and fighter-engine-kit `7007df2e70ae26c1e2ca0f0e6416582f3240717a`.
 
+The charcoal shoulder cat uses the existing gear descriptor (`charcoal-cat`) with fixed charcoal/green paint. Its static frame-zero paths are baked behind the full body, independently of head/back gear paints, on both outfits. There is no web animation clock, sprite sheet, extra request or ownership decision. The asset's optional `shoulder` catalog holds only generated vectors. This addition uses native companion geometry from app revision `351cf2587`; the pinned kit `fc1cfc20fc867fc23973b965e3c0865506abd512` has identical presentation resources to the `7007df2e70ae26c1e2ca0f0e6416582f3240717a` checkout used for the bake.
+
 The crop constants live in one place, `internal/avatarart/bake.go`.
 
 
