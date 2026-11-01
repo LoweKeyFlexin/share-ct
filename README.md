@@ -313,7 +313,7 @@ no point and costs no life. Reaction routes and ranking remain unchanged.
 `device_label`. Drill IDs: `whiff-punish`, `hit-confirm`, `anti-air`, `crosscut`, `drive-impact`, `mental-stack`.
 Ranked Mental Stack uses all five encounters at 100% speed; custom subsets remain
 local practice. Practice requires all five drills unlocked; ranked Endless requires
-all five Level 4 clears. The client enforces this eligibility before submission; the aggregate
+all five original Level 4 clears plus completion of each new curriculum (full Tutorial or an earned Arcade clear). The client enforces this eligibility before submission; the aggregate
 API does not receive an encounter trace or a custom selection. The new category uses
 the existing payload, sharing scope, retention and consent contract.
 `score` must be an integer in 0–1,000,000; `misses` must equal 3 (natural game over).
@@ -422,7 +422,7 @@ An Arcade submission adds `enemies_defeated`, `total_opponents`, `completed`,
 `elapsed_ms`, `perfect_opponents` and `hits` to the usual aggregate score body.
 `misses` is the actual nonnegative mistake count, rather than the Endless fixed
 three. Only whole defeated opponents count; boss phases do not add enemies.
-The current one-pass ladder has 12 or 13 opponents after player exclusions.
+The original drills have 12 or 13 opponents after player exclusions. The six new curricula (`whiff-punish-ii`, `hit-confirm-ii`, `anti-air-ii`, `crosscut-ii`, `drive-impact-ii`, and `parry`) have independent Arcade and Endless boards and finite ladders of 13 or 14 opponents. Original records and IDs stay separate; migration 013 preserves all existing bests, run rows, receipts, and sequence high-water values.
 `completed` must agree with `enemies_defeated == total_opponents`. Elapsed time
 is positive and capped at one day; perfect opponents cannot exceed defeated
 opponents, and hits cannot be below defeated opponents. Device/platform/source
