@@ -83,7 +83,7 @@ test('card metadata owns readable sibling lines outside the identity and score c
 
 
 test('Arcade mode is available only for the five atomic drills', () => {
-  for (const drill of ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact']) {
+  for (const drill of ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact','whiff-punish-ii','hit-confirm-ii','anti-air-ii','crosscut-ii','drive-impact-ii','parry']) {
     assert.equal(context.drillMode(drill, 'arcade'), 'arcade');
     assert.equal(context.drillMode(drill, 'endless'), 'endless');
   }

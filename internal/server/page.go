@@ -113,7 +113,7 @@ const boardScriptSource = `(function () {
   }
 
   function drillMode(drill, requested) {
-    var atomic = ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact'];
+    var atomic = ['whiff-punish','hit-confirm','anti-air','crosscut','drive-impact','whiff-punish-ii','hit-confirm-ii','anti-air-ii','crosscut-ii','drive-impact-ii','parry'];
     return requested === 'arcade' && atomic.indexOf(drill) >= 0 ? 'arcade' : 'endless';
   }
 
@@ -548,7 +548,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".50"
+const pageVersion = ".51"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -778,6 +778,12 @@ const indexHead = `<!doctype html>
           <option value="anti-air">Anti-Air</option>
           <option value="crosscut">Crosscut</option>
           <option value="drive-impact">Impact</option>
+          <option value="whiff-punish-ii">Whiff Punish II</option>
+          <option value="hit-confirm-ii">Hit Confirm II</option>
+          <option value="anti-air-ii">Anti-Air II</option>
+          <option value="crosscut-ii">Crosscut II</option>
+          <option value="drive-impact-ii">Drive Impact II</option>
+          <option value="parry">Parry</option>
           <option value="mental-stack">Mental Stack</option>
         </select>
       </div>

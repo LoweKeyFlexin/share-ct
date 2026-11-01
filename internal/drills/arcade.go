@@ -45,9 +45,12 @@ func validateArcade(r Request) string {
 	if a == nil {
 		return "arcade"
 	}
-	// The current one-pass ladder has 13 eligible opponents, or 12 when the
-	// selected player removes an additional opponent. No client-defined ladder.
-	if a.TotalOpponents < 12 || a.TotalOpponents > 13 {
+	// Original and new curricula have separate finite roster limits.
+	minimum, maximum := 12, 13
+	if curriculumDrill(r.DrillID) {
+		minimum, maximum = 13, 14
+	}
+	if a.TotalOpponents < minimum || a.TotalOpponents > maximum {
 		return "total_opponents"
 	}
 	if a.EnemiesDefeated < 0 || a.EnemiesDefeated > a.TotalOpponents {
