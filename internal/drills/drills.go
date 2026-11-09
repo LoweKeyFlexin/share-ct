@@ -73,7 +73,7 @@ const windowedSQL = `WITH pool AS (
  best AS (SELECT pool.*,ROW_NUMBER() OVER(PARTITION BY player_id ORDER BY score DESC,created_at ASC,id ASC) AS pick FROM pool),
  ranked AS (SELECT b.*,ROW_NUMBER() OVER(ORDER BY b.score DESC,b.created_at ASC,b.id ASC) AS rank,
  count(*) OVER() AS board_size FROM best b WHERE b.pick=1)
- SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,p.avatar
+ SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,COALESCE(p.avatar_complete,p.avatar)
  FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
 
 type Receipt struct {
@@ -302,7 +302,7 @@ func (m *Module) saveWithIntent(ctx context.Context, player string, req Request,
 
 const rankedSQL = `WITH ranked AS (SELECT b.*,ROW_NUMBER() OVER(ORDER BY b.score DESC,b.created_at ASC,b.id ASC) AS rank,
  count(*) OVER() AS board_size FROM drill_bests b WHERE b.drill_id=?)
- SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,p.avatar
+ SELECT b.rank,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,b.board_size,COALESCE(p.avatar_complete,p.avatar)
  FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
 
 func (m *Module) read(ctx context.Context, drill, player string, limit int) (Board, error) {

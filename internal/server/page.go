@@ -197,7 +197,7 @@ const boardScriptSource = `(function () {
 
   // Recipes only select our static catalog; unknown future values keep their known body/outfit.
   function avatarLook(raw, art) {
-    if (typeof raw !== 'string' || raw.length > 64 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw) || AVATAR_V3.test(raw))) return DEFAULT_LOOK;
+    if (typeof raw !== 'string' || raw.length > 224 || !(AVATAR_V1.test(raw) || AVATAR_V2.test(raw) || AVATAR_V3.test(raw))) return DEFAULT_LOOK;
     var f = raw.split(':');
     if (f[0] === '3' && f[4].split(',').length !== f[6].split(',').length) return DEFAULT_LOOK;
     var fighter = art && catalogValue(art.fighters, f[1]);
@@ -548,7 +548,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".51"
+const pageVersion = ".52"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

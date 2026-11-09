@@ -273,7 +273,7 @@ func bestPerPlayer(sort, source string) string {
 func (s *Store) Recent(ctx context.Context, source string, limit int) ([]Entry, error) {
 	q := `
 	  SELECT s.player_id, p.player_ref, p.display_name, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform,
-	         s.device_label, s.created_at, s.source, s.attempts_ms, s.misfires, p.avatar
+	         s.device_label, s.created_at, s.source, s.attempts_ms, s.misfires, COALESCE(p.avatar_complete,p.avatar)
 	  FROM submissions s JOIN players p ON p.id = s.player_id`
 	args := []any{limit}
 	if source != "" {
@@ -336,7 +336,7 @@ func (s *Store) Board(ctx context.Context, source, window, sort string, limit in
 	}
 	q := `WITH best AS (` + bestPerPlayer(sort, source) + `)
 	  SELECT b.player_id, p.player_ref, p.display_name, b.score, b.best_ms, b.avg_ms, b.accuracy, b.platform,
-	         b.device_label, b.created_at, b.source, b.attempts_ms, b.misfires, p.avatar
+	         b.device_label, b.created_at, b.source, b.attempts_ms, b.misfires, COALESCE(p.avatar_complete,p.avatar)
 	  FROM best b JOIN players p ON p.id = b.player_id
 	  WHERE b.rn = 1
 	  ORDER BY ` + orderBy(sort, "b.") + `

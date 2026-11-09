@@ -10,8 +10,9 @@ import (
 	"github.com/LoweKeyFlexin/share-ct/internal/httpx"
 )
 
-// MaxAvatarBytes caps a stored avatar descriptor. The app's largest is about 60 bytes.
-const MaxAvatarBytes = 64
+// MaxAvatarBytes admits the full bounded v3 shape (up to 219 bytes), including
+// four gear ids, a limited look and positional paints. Field validation is unchanged.
+const MaxAvatarBytes = 224
 
 // avatarV1 is the version-1 descriptor: version:fighter:outfit:color[:gear[,gear...]].
 // Ids are lowercase [a-z0-9-] of at most 32 characters; outfit is 1-9, color 0-9, and
@@ -74,8 +75,14 @@ func (m *Module) setAvatar(w http.ResponseWriter, r *http.Request) {
 
 // SetAvatar stores the descriptor (nil clears it) and bumps last_seen_at.
 func (s *Store) SetAvatar(ctx context.Context, id string, avatar *string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE players SET avatar = ?, last_seen_at = ? WHERE id = ?`,
-		avatar, s.now().Unix(), id)
+	var legacy, complete *string
+	if avatar != nil && len(*avatar) > 64 {
+		complete = avatar
+	} else {
+		legacy = avatar
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE players SET avatar = ?, avatar_complete = ?, last_seen_at = ? WHERE id = ?`,
+		legacy, complete, s.now().Unix(), id)
 	return affectedOne(res, err)
 }
 
