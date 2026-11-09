@@ -42,7 +42,7 @@ test('v2 EX01 on Standard is two-tone; on any other fighter, or another look, it
 test('empty, garbage, unknown fighter, bad shapes and no art draw the blue Standard default', () => {
   for (const raw of [null, undefined, 42, '', 'garbage', '1:puppet-ghost:1:0', '3:puppet:1:0',
                      '2:puppet:1:0', '1:puppet:1:0::bonus-ex01', '1:Puppet:1:0', '<b>x</b>',
-                     '2:' + 'f'.repeat(32) + ':1:0:' + 'g'.repeat(13) + ':' + 'l'.repeat(12)]) {
+                     'x'.repeat(225)]) {
     assert.deepEqual(look(raw), DEFAULT, String(raw));
   }
   assert.deepEqual(JSON.parse(JSON.stringify(context.avatarLook('1:puppet-oni:1:0', null))), DEFAULT);
@@ -197,4 +197,15 @@ test('cat symbols stay separate, behind the body, with unique gradient IDs', () 
  const ids=[...all.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
  assert.equal(new Set(ids).size,ids.length);
  for(const match of all.matchAll(/url\(#([^)]*)\)/g))assert(ids.includes(match[1]));
+});
+
+test('complete gear and limited look above the old 64-byte cap keeps its paint', () => {
+  const raw = '3:puppet-ronin:2:0:diving-helmet,greatsword,lunch-break:t123456780:r,w2,c';
+  assert.ok(raw.length > 64);
+  art.recipes = {skins: {t123456780: {line:[157,107,255]}}};
+  const resolved = look(raw);
+  assert.equal(resolved.body, 'puppet-ronin');
+  assert.equal(resolved.gear, 'diving-helmet');
+  assert.deepEqual(resolved.fill, [157,107,255]);
+  delete art.recipes;
 });

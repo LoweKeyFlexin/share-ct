@@ -32,17 +32,15 @@ func TestNormalizeAvatarAcceptsTheV2Shape(t *testing.T) {
 		"1:puppet:1:0::bonus-ex01",  // v1 cannot carry a look
 		"3:puppet:1:0::bonus-ex01",  // unknown version
 		"2:puppet:1:0::" + strings.Repeat("a", 33),
-		// 65 bytes: every field in shape, over the size cap
-		"2:" + strings.Repeat("f", 32) + ":1:0:" + strings.Repeat("g", 13) + ":" + strings.Repeat("l", 12),
 	}
 	for _, s := range bad {
 		if got := NormalizeAvatar(strp(s)); got != nil {
 			t.Errorf("%q (%d bytes): want nil, got %q", s, len(s), *got)
 		}
 	}
-	// Exactly 64 bytes is still accepted.
+	// Existing 64-byte descriptors remain accepted.
 	edge := "2:" + strings.Repeat("f", 32) + ":1:0:" + strings.Repeat("g", 12) + ":" + strings.Repeat("l", 12)
-	if len(edge) != MaxAvatarBytes || NormalizeAvatar(strp(edge)) == nil {
+	if len(edge) != 64 || NormalizeAvatar(strp(edge)) == nil {
 		t.Errorf("%d-byte v2 descriptor: want accepted", len(edge))
 	}
 }
@@ -62,7 +60,6 @@ func TestNormalizeAvatarAcceptsOnlyTheV1Shape(t *testing.T) {
 		"", "puppet", "2:puppet:1:0", "0:puppet:1:0", "1:Puppet:1:0", "1:puppet:0:0",
 		"1:puppet:1:10", "1:puppet:1:0:a,b,c,d,e", "1:puppet:1:0:", "1:<b>x</b>:1:0",
 		"1:puppet:1:0:pirate hat", "1:" + strings.Repeat("a", 33) + ":1:0",
-		"1:puppet:1:0:" + strings.Repeat("a", 30) + "," + strings.Repeat("b", 30),
 	}
 	for _, s := range bad {
 		if got := NormalizeAvatar(strp(s)); got != nil {
@@ -161,7 +158,7 @@ func TestOlderClientsAreUnaffected(t *testing.T) {
 func readAvatar(t *testing.T, hs *harness, id string) *string {
 	t.Helper()
 	var v sql.NullString
-	if err := hs.db.DB().QueryRow(`SELECT avatar FROM players WHERE id = ?`, id).Scan(&v); err != nil {
+	if err := hs.db.DB().QueryRow(`SELECT COALESCE(avatar_complete,avatar) FROM players WHERE id = ?`, id).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
 	if !v.Valid {
@@ -181,7 +178,7 @@ func TestCompactGearVariantDescriptorsKeepTheExistingByteCap(t *testing.T) {
 			t.Fatalf("invalid descriptor accepted: %s", raw)
 		}
 	}
-	raw := "3:" + strings.Repeat("a", 32) + ":1:0:pirate-hat,katana:t123456780:p1,t2"
+	raw := strings.Repeat("a", MaxAvatarBytes+1)
 	if NormalizeAvatar(&raw) != nil {
 		t.Fatal("oversized descriptor accepted")
 	}
@@ -194,6 +191,44 @@ func TestShoulderCompanionUsesExistingBoundedGearDescriptor(t *testing.T) {
 	} {
 		if normalized := NormalizeAvatar(&raw); normalized == nil || *normalized != raw {
 			t.Fatalf("companion descriptor rejected: %s", raw)
+		}
+	}
+}
+
+func TestCompletePaintedLookRoundTripsWithoutLosingFields(t *testing.T) {
+	raw := "3:puppet-heavy:1:0:scouter-visor,greatsword,lunch-break:t123456780:r,w2,c"
+	longest := "3:" + strings.Repeat("f", 32) + ":9:9:" + strings.Repeat(strings.Repeat("g", 32)+",", 3) + strings.Repeat("g", 32) + ":" + strings.Repeat("l", 32) + ":abc,abc,abc,abc"
+	for _, value := range []string{raw, longest} {
+		if len(value) <= 64 || len(value) > MaxAvatarBytes {
+			t.Fatalf("bad fixture size %d", len(value))
+		}
+		if got := NormalizeAvatar(&value); got == nil || *got != value {
+			t.Fatalf("complete look dropped: %q", value)
+		}
+		if got := StoredAvatar(sql.NullString{String: value, Valid: true}); got == nil || *got != value {
+			t.Fatal("stored look lost")
+		}
+	}
+	hs := newHarness(t, stubScores{})
+	id, token := hs.register("LookTest", "203.0.113.1")
+	rec, out := hs.do("PUT", "/v1/players/"+id+"/avatar", `{"avatar":"`+raw+`"}`, token, "")
+	if rec.Code != http.StatusOK || out["avatar"] != raw {
+		t.Fatalf("complete look write: %d %v", rec.Code, out)
+	}
+	if got := readAvatar(t, hs, id); got == nil || *got != raw {
+		t.Fatal("complete look not persisted")
+	}
+	for _, body := range []string{`{"avatar":"1:puppet:1:0"}`, `{"avatar":null}`} {
+		rec, out = hs.do("PUT", "/v1/players/"+id+"/avatar", body, token, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("replace: %d", rec.Code)
+		}
+		got := readAvatar(t, hs, id)
+		if out["avatar"] == nil && got != nil {
+			t.Fatal("complete avatar resurrected after clear")
+		}
+		if out["avatar"] != nil && (got == nil || *got != out["avatar"]) {
+			t.Fatal("old complete avatar overrode replacement")
 		}
 	}
 }

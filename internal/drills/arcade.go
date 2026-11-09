@@ -187,7 +187,7 @@ func (m *Module) readArcade(ctx context.Context, drill, player string, limit int
 	}
 	query := `WITH pool AS (` + pool + `),picked AS (SELECT pool.*,ROW_NUMBER() OVER(PARTITION BY player_id ORDER BY ` + arcadeOrder + `) AS pick FROM pool),
  ranked AS (SELECT *,ROW_NUMBER() OVER(ORDER BY ` + arcadeOrder + `) AS rank,count(*) OVER() AS board_size FROM picked WHERE pick=1)
- SELECT b.rank,b.board_size,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,p.avatar,
+ SELECT b.rank,b.board_size,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,COALESCE(p.avatar_complete,p.avatar),
  b.enemies_defeated,b.total_opponents,b.completed,b.elapsed_ms,b.perfect_opponents,b.hits,b.client_id
  FROM ranked b JOIN players p ON p.id=b.player_id WHERE b.rank<=? OR b.player_id=? ORDER BY b.rank`
 	args = append(args, limit, player)
@@ -197,7 +197,7 @@ func (m *Module) readArcade(ctx context.Context, drill, player string, limit int
 			return b, err
 		}
 		b.Own, b.BoardSize, b.Sort = own.Own, own.BoardSize, "recent"
-		query = `SELECT 0,0,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,p.avatar,
+		query = `SELECT 0,0,p.id,p.player_ref,p.display_name,b.score,b.source,b.platform,b.device_label,b.created_at,COALESCE(p.avatar_complete,p.avatar),
  b.enemies_defeated,b.total_opponents,b.completed,b.elapsed_ms,b.perfect_opponents,b.hits,b.client_id
  FROM arcade_runs b JOIN players p ON p.id=b.player_id WHERE b.drill_id=? AND b.created_at>=? ORDER BY b.created_at DESC,b.id DESC LIMIT ?`
 		args = []any{drill, max(since, m.now().Add(-RunRetention).Unix()), limit}
