@@ -454,3 +454,7 @@ player-erasure cascades. Recent retains at most 200 rows/player across all drill
 never enter Recent. Retained bests and runs preserve exact retry intent beyond
 the receipt ring, and a changed body or cross-route retry conflicts. Legacy
 Endless request hashes are unchanged. No attempt/input history is stored.
+
+### Website Recent across score types
+
+The leaderboard dropdown’s **Recent** option calls `GET /v1/activity?limit=50` (default50, accepted1…50). It combines the public Reaction feed and explicitly published Drills run feeds, newest first. Entries retain their existing public score fields, with `activity_type` (`reaction` or `drill`) and, for drills, `drill_id`/`mode`. This is chronology, not ranking. Best-only Drills submissions never enter it; retention, erasure and publication consent remain unchanged. Apps do not use this endpoint.

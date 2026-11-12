@@ -117,6 +117,15 @@ const boardScriptSource = `(function () {
     return requested === 'arcade' && atomic.indexOf(drill) >= 0 ? 'arcade' : 'endless';
   }
 
+  function activityLabel(entry) {
+    if (entry.activity_type !== 'drill') return 'Reaction Test';
+    var names = {'whiff-punish':'Whiff Punish','hit-confirm':'Hit Confirm','anti-air':'Anti-Air',
+      crosscut:'Crosscut','drive-impact':'Impact','whiff-punish-ii':'Whiff Punish II',
+      'hit-confirm-ii':'Hit Confirm II','anti-air-ii':'Anti-Air II','crosscut-ii':'Crosscut II',
+      'drive-impact-ii':'Drive Impact II',parry:'Parry','mental-stack':'Mental Stack'};
+    return (names[entry.drill_id] || 'Drill') + ' · ' + (entry.mode === 'arcade' ? 'ARCADE' : 'ENDLESS');
+  }
+
   function arcadePresentation(entry) {
     var seconds = Math.floor(entry.elapsed_ms / 1000);
     var time = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') +
@@ -335,8 +344,9 @@ const boardScriptSource = `(function () {
   // One card. The headline is whichever number ranks the board, so the row leads with the
   // thing the list is sorted by; everything else is behind the disclosure.
   function card(e) {
-    var endless = !!state.drill;
-    var arcade = endless && drillMode(state.drill, state.mode) === 'arcade';
+    var mixed = state.drill === 'recent';
+    var endless = mixed ? e.activity_type === 'drill' : !!state.drill;
+    var arcade = endless && (mixed ? e.mode === 'arcade' : drillMode(state.drill, state.mode) === 'arcade');
     var arcadeInfo = arcade ? arcadePresentation(e) : null;
     var byScore = endless || state.view === 'score';
     var feed = state.view === 'recent';
@@ -372,6 +382,7 @@ const boardScriptSource = `(function () {
     if (origin.icon) playerID.appendChild(platformGlyph(origin));
     identity.appendChild(playerID);
     who.appendChild(identity);
+    if (mixed) who.appendChild(el('small', 'activity-label', activityLabel(e)));
     var platform = platformInfo(e.platform);
     var subline = el('small', 'device-subline');
     var date = when(e.created_at);
@@ -441,7 +452,7 @@ const boardScriptSource = `(function () {
   function render(board) {
     var activity = document.getElementById('endless-drill');
     var title = activity.options[activity.selectedIndex].text;
-    document.getElementById('board-heading').textContent = title.toUpperCase() + (state.drill ? ' · ' + drillMode(state.drill, state.mode).toUpperCase() : '') + ' LEADERBOARD';
+    document.getElementById('board-heading').textContent = state.drill === 'recent' ? 'RECENT SUBMISSIONS' : title.toUpperCase() + (state.drill ? ' · ' + drillMode(state.drill, state.mode).toUpperCase() : '') + ' LEADERBOARD';
     board_.textContent = '';
     if (!board.entries.length) {
       board_.hidden = true;
@@ -463,7 +474,7 @@ const boardScriptSource = `(function () {
     }
     board.entries.forEach(function (e) { board_.appendChild(card(e)); });
     status.textContent = '';
-    ranked.textContent = state.drill && drillMode(state.drill, state.mode) === 'arcade' ? (state.view === 'recent' ? 'Newly shared Arcade attempts, newest first.' : 'Clears first, fastest clear time wins. Partial runs rank by enemies defeated, then points, then time. Ladder length is shown in each row.') : state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
+    ranked.textContent = state.drill === 'recent' ? 'All recently shared scores, newest first.' : state.drill && drillMode(state.drill, state.mode) === 'arcade' ? (state.view === 'recent' ? 'Newly shared Arcade attempts, newest first.' : 'Clears first, fastest clear time wins. Partial runs rank by enemies defeated, then points, then time. Ladder length is shown in each row.') : state.drill ? (state.view === 'recent' ? 'Every newly shared completed drill run, newest first.' : 'Highest active-reaction count per player. Three lives, 100% speed. Correct non-actions earn no points.') : ((state.view === 'recent' ? RANKED_BY.recent : RANKED_BY[state.view]) || '');
     board_.hidden = false;
   }
 
@@ -475,7 +486,7 @@ const boardScriptSource = `(function () {
     // leaderboard for now". The server still accepts the parameter, so the board can grow
     // a window control again without a server change — nothing was removed underneath.
     var generation = ++loadGeneration;
-    var url = state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&mode=' + drillMode(state.drill, state.mode) + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
+    var url = state.drill === 'recent' ? '/v1/activity?limit=50' : state.drill ? '/v1/drills/board?drill_id=' + state.drill + '&mode=' + drillMode(state.drill, state.mode) + '&limit=50' + (state.view === 'recent' ? '&sort=recent' : '') : state.view === 'recent'
       ? '/v1/recent?limit=' + LIMITS.recent
       : '/v1/board?source=all&window=all&sort=' + state.view + '&limit=' + LIMITS[state.view];
     fetch(url, { headers: { Accept: 'application/json' } })
@@ -503,7 +514,8 @@ const boardScriptSource = `(function () {
   Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
     button.addEventListener('click', function () {
       state.view = button.getAttribute('data-view');
-      if (state.drill && state.view === 'fastest') state.view = 'score';
+      if (state.drill === 'recent') state.view = 'recent';
+      else if (state.drill && state.view === 'fastest') state.view = 'score';
       Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (other) {
         other.setAttribute('aria-pressed', String(other.getAttribute('data-view') === state.view));
       });
@@ -513,9 +525,11 @@ const boardScriptSource = `(function () {
 
   document.getElementById('endless-drill').addEventListener('change', function () {
     state.drill = this.value;
+    if (state.drill === 'recent') state.view = 'recent';
+    document.getElementById('board-views').hidden = state.drill === 'recent';
     state.mode = drillMode(state.drill, state.mode);
     document.getElementById('drill-mode').value = state.mode;
-    document.getElementById('drill-mode-choice').hidden = !state.drill || state.drill === 'mental-stack';
+    document.getElementById('drill-mode-choice').hidden = !state.drill || state.drill === 'mental-stack' || state.drill === 'recent';
     if (state.drill && state.view === 'fastest') state.view = 'score';
     document.querySelector('[data-view="fastest"]').disabled = !!state.drill;
     Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
@@ -548,7 +562,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".53"
+const pageVersion = ".54"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -772,6 +786,7 @@ const indexHead = `<!doctype html>
       <div class="leaderboard-choice">
         <label for="endless-drill">LEADERBOARD</label>
         <select id="endless-drill" aria-label="Choose leaderboard">
+          <option value="recent">Recent</option>
           <option value="" selected>Reaction Test</option>
           <option value="whiff-punish">Whiff Punish</option>
           <option value="hit-confirm">Hit Confirm</option>
@@ -794,7 +809,7 @@ const indexHead = `<!doctype html>
           <option value="arcade">Arcade</option>
         </select>
       </div>
-      <nav class="tabs" aria-label="View">
+      <nav class="tabs" id="board-views" aria-label="View">
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
         <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
