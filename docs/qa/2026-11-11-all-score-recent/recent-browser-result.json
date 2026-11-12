@@ -1,0 +1,24 @@
+{
+  "pass": true,
+  "localOnly": true,
+  "assertions": {
+    "title": "RECENT SUBMISSIONS",
+    "selected": "Recent",
+    "types": [
+      "Whiff Punish · ARCADE",
+      "Hit Confirm II · ENDLESS",
+      "Mental Stack · ENDLESS",
+      "Anti-Air · ENDLESS",
+      "Reaction Test"
+    ],
+    "ranks": [
+      "·",
+      "·",
+      "·",
+      "·",
+      "·"
+    ],
+    "tabsHidden": true,
+    "modeHidden": true
+  }
+}

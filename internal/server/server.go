@@ -37,7 +37,9 @@ func New(log *slog.Logger, db *store.Store, now func() time.Time) http.Handler {
 	scores := leaderboard.NewStore(db.DB(), now)
 	pl := players.New(log, db.DB(), now, scores)
 	pl.Register(mux)
-	drills.New(db.DB(), now).Register(mux, pl.RequireBearer)
+	drillScores := drills.New(db.DB(), now)
+	drillScores.Register(mux, pl.RequireBearer)
+	mux.HandleFunc("GET /v1/activity", handleActivity(log, scores, drillScores))
 	leaderboard.New(log, scores, pl.RequireBearer, now).Register(mux)
 	moderation.New(log, db.DB(), now).Register(mux, pl.RequireBearer)
 	admin.New(log, db.DB(), nil).Register(mux) // off (404) until Cloudflare Access is configured

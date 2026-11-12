@@ -100,3 +100,33 @@ test('Arcade partial headline counts whole enemies, while clear headline is elap
   assert.equal(clear.label, 'CLEAR TIME');
   assert.equal(clear.progress, '12 / 12 enemies');
 });
+
+test('all-score Recent cards use each entry type and never award chronology a podium', () => {
+  class Element {
+    constructor(tag) { this.tag=tag; this.children=[]; this.className=''; this.text=''; this.style={setProperty(){}}; }
+    set textContent(value) { this.text=String(value); this.children=[]; }
+    get textContent() { return this.text+this.children.map(c=>c.textContent).join(''); }
+    appendChild(child) { this.children.push(child); child.parent=this; return child; }
+    setAttribute(key,value) { this[key]=value; }
+  }
+  const document={createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)};
+  const ctx=vm.createContext({document,FRAME_MS:1000/60,state:{drill:'recent',view:'recent',mode:'endless'}});
+  vm.runInContext(source.slice(source.indexOf('  function el('),source.indexOf('  function render(')),ctx);
+  const find=(n,cls)=>n.className.split(' ').includes(cls)?n:n.children.map(c=>find(c,cls)).find(Boolean);
+  const base={rank:1,display_name:'<img onerror=alert(1)>',player_short:'AB12',source:'touch',platform:'ios',
+    device_label:'Touch',created_at:'2026-11-11T20:00:00Z',score:17,best_ms:200,avg_ms:210,tier:'MASTER'};
+  for (const [fields,label,headline] of [
+    [{activity_type:'reaction'},'Reaction Test','12.0f'],
+    [{activity_type:'drill',drill_id:'mental-stack',mode:'endless'},'Mental Stack · ENDLESS','17'],
+    [{activity_type:'drill',drill_id:'hit-confirm-ii',mode:'endless'},'Hit Confirm II · ENDLESS','17'],
+    [{activity_type:'drill',drill_id:'whiff-punish',mode:'arcade',completed:true,elapsed_ms:90000,enemies_defeated:14,total_opponents:14,hits:42,perfect_opponents:0,consistency_bonus:40,time_bonus:210},'Whiff Punish · ARCADE','1:30.00'],
+  ]) {
+    const card=ctx.card({...base,...fields});
+    assert.equal(find(card,'activity-label').textContent,label);
+    assert.equal(find(card,'big').children[0].textContent,headline);
+    assert.equal(find(card,'rk').textContent,'·');
+    assert.doesNotMatch(card.className,/\bp[123]\b/);
+    assert.match(find(card,'player-identity').textContent,/<img onerror=alert\(1\)>/);
+    assert.equal(card.children[0].tag,'summary');
+  }
+});
