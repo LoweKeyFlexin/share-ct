@@ -46,7 +46,7 @@ func validateArcade(r Request) string {
 		return "arcade"
 	}
 	// Original and new curricula have separate finite roster limits.
-	minimum, maximum := 12, 13
+	minimum, maximum := 12, 14
 	if curriculumDrill(r.DrillID) {
 		minimum, maximum = 13, 14
 	}
