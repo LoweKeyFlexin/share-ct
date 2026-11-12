@@ -52,8 +52,8 @@ func TestNewCurriculaHaveIndependentArcadeAndEndlessBoards(t *testing.T) {
 		})
 	}
 	original := arcadeReq("original", 14, 14, 90000, 0, 50)
-	if validate(original) != "total_opponents" {
-		t.Fatal("new roster rules leaked into original drill")
+	if got := validate(original); got != "" {
+		t.Fatalf("original ladders also field fourteen opponents: %s", got)
 	}
 	if w := call(h, "GET", "/v1/drills/board?drill_id=hit-confirm&mode=endless", "", ""); w.Code != 200 {
 		t.Fatal(w.Code)
