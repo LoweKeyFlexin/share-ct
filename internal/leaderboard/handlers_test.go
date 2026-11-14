@@ -156,7 +156,7 @@ func TestSubmitRecomputesAndRanks(t *testing.T) {
 
 	entries := hs.board("?source=touch")
 	if len(entries) != 1 || entries[0]["avg_ms"] != float64(205) || entries[0]["accuracy"] != float64(1) ||
-		// Rank 1 on a one-row board: LEGEND by STANDING. 200 ms is 12.0f, which is MASTER
+		// Rank 1 on a one-row board: LEGEND by STANDING. 200 ms is 12.0f, which is HIGH MASTER
 		// on the time ladder, so this asserts the promotion rather than a time.
 		entries[0]["score"] != float64(2100) || entries[0]["tier"] != "LEGEND" || entries[0]["player_short"] != players.Short(id) ||
 		entries[0]["display_name"] != "Player 1" || entries[0]["platform"] != "ios" || entries[0]["rank"] != float64(1) {
@@ -185,9 +185,9 @@ func TestSubmitRejects(t *testing.T) {
 		{"missing attempts", func(b map[string]any) { delete(b, "attempts_ms") }, "attempts"},
 		{"sample under 100", func(b map[string]any) { b["attempts_ms"] = []float64{99, 205, 210} }, "implausible"},
 		{"sample over 3000", func(b map[string]any) { b["attempts_ms"] = []float64{200, 205, 3001} }, "implausible"},
-		{"best under the 10f floor", func(b map[string]any) {
-			b["attempts_ms"] = []float64{150, 205, 210}
-			ts := ScoreTrial([]float64{150, 205, 210}, 0)
+		{"best under the 6F floor", func(b map[string]any) {
+			b["attempts_ms"] = []float64{99.5, 205, 210}
+			ts := ScoreTrial([]float64{99.5, 205, 210}, 0)
 			b["best_ms"], b["score"] = ts.BestMs, ts.Score
 		}, "implausible"},
 		{"score off by one", func(b map[string]any) { b["score"] = 2099 }, "score_mismatch"},
@@ -326,10 +326,10 @@ func TestBoardOrderingOneRowPerPlayer(t *testing.T) {
 		tier  string
 		// THE BOARD IS A RANKING, so a row's tier is its time tier with LEGEND for a
 		// top-three STANDING. Ranks 1-3 are LEGEND whatever their times; rank 4 falls to
-		// the time ladder, and 200 ms is 12.0f, which is MASTER. Aaron, 2026-09-14:
+		// the time ladder, and 200 ms is 12.0f, which is HIGH MASTER. Aaron, 2026-09-14:
 		// "they should compete online if they want legend" — it is earned here, on a
 		// board, and nowhere else.
-	}{{c, 2104, "LEGEND"}, {b, 2100, "LEGEND"}, {a, 2100, "LEGEND"}, {d, 1350, "MASTER"}}
+	}{{c, 2104, "LEGEND"}, {b, 2100, "LEGEND"}, {a, 2100, "LEGEND"}, {d, 1350, "HIGH MASTER"}}
 	if len(entries) != len(want) {
 		t.Fatalf("%d entries, want %d: %v", len(entries), len(want), entries)
 	}

@@ -69,7 +69,7 @@ func TestOriginalArcade015PreservesRowsReceiptsSequencesAndCascades(t *testing.T
 	for _, table := range []string{"players", "arcade_receipts", "arcade_bests", "arcade_runs", "drill_feed_order"} {
 		before[table] = snapshot(table)
 	}
-	if result, err := s.Migrate(ctx, migrations.FS); err != nil || result.Applied != 1 {
+	if result, err := s.Migrate(ctx, migrations.FS); err != nil || result.Applied != len(embedded(t))-14 {
 		t.Fatalf("upgrade: %+v %v", result, err)
 	}
 	for table, expected := range before {
