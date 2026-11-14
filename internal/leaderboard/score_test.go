@@ -21,7 +21,7 @@ import (
 //
 // Updating this constant is therefore part of updating the fixture, never a separate
 // chore: a stale pin is not a failing test, it is a passing one.
-const fixtureBlob = "bb271c50e92f87bb76e9c3926df665329fd67c8f"
+const fixtureBlob = "b5e203cef0628d9a352eaa447f069ac7468fc2e6"
 
 type fixture struct {
 	Version   int `json:"version"`
@@ -70,8 +70,8 @@ func loadFixture(t *testing.T) fixture {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Version != 2 {
-		t.Fatalf("fixture version %d; this port was written against 2", f.Version)
+	if f.Version != 4 {
+		t.Fatalf("fixture version %d; this port was written against 4", f.Version)
 	}
 	return f
 }

@@ -15,11 +15,9 @@ const (
 	TrialAttempts = 3
 	// FrameMs is one 60 fps frame in milliseconds.
 	FrameMs float64 = 1000.0 / 60.0
-	// PBFloorFrames and PBCeilFrames bound the high-score plausibility band: faster
-	// than ~10 frames is superhuman, slower than 200 frames is not a reaction. The
-	// app shows a result outside the band but writes no PB and no log row, so nothing
-	// outside it can be an honest submission.
-	PBFloorFrames float64 = 10
+	// Ranked eligibility policy (Aaron 2026-11-13), not a physiological claim.
+	// The existing individual-press guards and scoring arithmetic are unchanged.
+	PBFloorFrames float64 = 6
 	PBCeilFrames  float64 = 200
 	// SubThresholdMs is the sub-13-frame kicker threshold (about 216.7 ms).
 	SubThresholdMs float64 = 13.0 * 1000.0 / 60.0
@@ -32,7 +30,7 @@ const (
 // Frames converts milliseconds to 60 fps frames.
 func Frames(ms float64) float64 { return ms / FrameMs }
 
-// IsValidHighScore reports whether bestMs sits inside the 10 to 200 frame band.
+// IsValidHighScore reports whether bestMs sits inside the 6 to 200 frame band.
 func IsValidHighScore(bestMs float64) bool {
 	floor := PBFloorFrames * FrameMs
 	ceil := PBCeilFrames * FrameMs
@@ -59,22 +57,26 @@ func TierName(bestMs float64) string {
 	}
 	f := Frames(bestMs)
 	switch {
-	case f < 11.5:
+	case f < 11:
 		return "ULTIMATE MASTER"
-	case f < 12:
+	case f < 11.8:
+		return "GRAND MASTER"
+	case f < 12.6:
 		return "HIGH MASTER"
-	case f < 13:
+	case f < 13.5:
 		return "MASTER"
-	case f < 14.5:
+	case f < 15:
 		return "DIAMOND"
-	case f < 16:
+	case f < 17:
 		return "PLATINUM"
-	case f < 18:
+	case f < 19.5:
 		return "GOLD"
-	case f < 20.5:
+	case f < 22.5:
 		return "SILVER"
-	case f < 25:
+	case f < 26:
 		return "BRONZE"
+	case f < 30:
+		return "IRON"
 	default:
 		return "ROOKIE"
 	}
@@ -254,10 +256,8 @@ const (
 	// anticipates their way to a slow time — policing one would only punish a casual
 	// player for being inconsistent.
 	BackingThresholdFrames float64 = 13.5
-	// BackingWithinFrames is how close the second-fastest attempt must be. Aaron ruled
-	// 2 rather than 1: one frame is tighter than genuine trial-to-trial variance and
-	// would cut real players for noise.
-	BackingWithinFrames float64 = 2
+	// Same-trial second-fastest gap, inclusive (Aaron 2026-11-13).
+	BackingWithinFrames float64 = 2.5
 	// BackingSinceUnix GRANDFATHERS every run submitted before it. Aaron, 2026-09-18:
 	// "Let's grandfather all existing EXCEPT for that 10 frame first place", and then,
 	// on the date of that run, "That one was September 16th. You can lop that one off

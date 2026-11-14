@@ -1,18 +1,18 @@
 {
-  "version": 2,
-  "description": "Reaction formula parity. band: isValidHighScore(bestMs) against the 10-200 frame plausibility band (frame = 1000/60 ms). Boundary cases probe 1-2ms INSIDE/OUTSIDE the band, never the exact float boundary — 10*frameMs accumulates differently per language/compiler. tiers: skill-tier name from bestMs — the SF6 ranked ladder (#1078, v2; replaced the GODLIKE 5-tier ladder). trials: full trial scoring — samples (ms) + misfires -> expected components. iOS ContentView completeTrial math is the source of truth; band/tier cases seeded from ControllerTesterWindows/src/reaction.rs tests (2026-07-01).",
+  "version": 4,
+  "description": "Reaction formula parity v4: Aaron 2026-11-13 approved 6F ranked minimum; 2.5F same-trial backing remains a separate qualification rule. Timing and scoring arithmetic unchanged.",
   "constants": {
     "trialAttempts": 3,
     "frameMs": 16.666666666666668,
-    "pbFloorFrames": 10,
+    "pbFloorFrames": 6,
     "pbCeilFrames": 200,
     "maxPlausibleReactionMs": 3000
   },
   "band": [
     {
-      "name": "6.5 frames too fast",
+      "name": "6.5 frames eligible",
       "bestMs": 108,
-      "valid": false
+      "valid": true
     },
     {
       "name": "250ms valid",
@@ -21,12 +21,12 @@
     },
     {
       "name": "just inside floor valid",
-      "bestMs": 168,
+      "bestMs": 101,
       "valid": true
     },
     {
       "name": "just under floor invalid",
-      "bestMs": 165,
+      "bestMs": 99,
       "valid": false
     },
     {
@@ -47,129 +47,159 @@
       "tier": "ULTIMATE MASTER"
     },
     {
-      "name": "11.88f high master (mid-band)",
-      "bestMs": 198,
+      "name": "11.40f grand master (mid-band)",
+      "bestMs": 190,
+      "tier": "GRAND MASTER"
+    },
+    {
+      "name": "12.18f high master (mid-band)",
+      "bestMs": 203,
       "tier": "HIGH MASTER"
     },
     {
-      "name": "12.60f master (mid-band)",
+      "name": "13.08f master (mid-band)",
+      "bestMs": 218,
+      "tier": "MASTER"
+    },
+    {
+      "name": "14.28f diamond (mid-band)",
+      "bestMs": 238,
+      "tier": "DIAMOND"
+    },
+    {
+      "name": "16.02f platinum (mid-band)",
+      "bestMs": 267,
+      "tier": "PLATINUM"
+    },
+    {
+      "name": "18.24f gold (mid-band)",
+      "bestMs": 304,
+      "tier": "GOLD"
+    },
+    {
+      "name": "21.00f silver (mid-band)",
+      "bestMs": 350,
+      "tier": "SILVER"
+    },
+    {
+      "name": "24.24f bronze (mid-band)",
+      "bestMs": 404,
+      "tier": "BRONZE"
+    },
+    {
+      "name": "28.02f iron (mid-band)",
+      "bestMs": 467,
+      "tier": "IRON"
+    },
+    {
+      "name": "32.52f rookie (open band)",
+      "bestMs": 542,
+      "tier": "ROOKIE"
+    },
+    {
+      "name": "edge <11.0f: 183ms = 10.980f, just under",
+      "bestMs": 183,
+      "tier": "ULTIMATE MASTER"
+    },
+    {
+      "name": "edge <11.0f: 184ms = 11.040f, just over",
+      "bestMs": 184,
+      "tier": "GRAND MASTER"
+    },
+    {
+      "name": "edge <11.8f: 196ms = 11.760f, just under",
+      "bestMs": 196,
+      "tier": "GRAND MASTER"
+    },
+    {
+      "name": "edge <11.8f: 197ms = 11.820f, just over",
+      "bestMs": 197,
+      "tier": "HIGH MASTER"
+    },
+    {
+      "name": "edge <12.6f: 209ms = 12.540f, just under",
+      "bestMs": 209,
+      "tier": "HIGH MASTER"
+    },
+    {
+      "name": "edge <12.6f: 210ms = 12.600f, ON the line",
       "bestMs": 210,
       "tier": "MASTER"
     },
     {
-      "name": "13.80f diamond (mid-band)",
-      "bestMs": 230,
-      "tier": "DIAMOND"
-    },
-    {
-      "name": "15.30f platinum (mid-band)",
-      "bestMs": 255,
-      "tier": "PLATINUM"
-    },
-    {
-      "name": "17.10f gold (mid-band)",
-      "bestMs": 285,
-      "tier": "GOLD"
-    },
-    {
-      "name": "19.20f silver (mid-band)",
-      "bestMs": 320,
-      "tier": "SILVER"
-    },
-    {
-      "name": "22.80f bronze (mid-band)",
-      "bestMs": 380,
-      "tier": "BRONZE"
-    },
-    {
-      "name": "27.00f rookie (mid-band)",
-      "bestMs": 450,
-      "tier": "ROOKIE"
-    },
-    {
-      "name": "edge <11.5f: 191ms = 11.460f, just under",
-      "bestMs": 191,
-      "tier": "ULTIMATE MASTER"
-    },
-    {
-      "name": "edge <11.5f: 192ms = 11.520f, just over",
-      "bestMs": 192,
-      "tier": "HIGH MASTER"
-    },
-    {
-      "name": "edge <12.0f: 199ms = 11.940f, just under",
-      "bestMs": 199,
-      "tier": "HIGH MASTER"
-    },
-    {
-      "name": "edge <12.0f: 200ms = 12.000f, ON the line",
-      "bestMs": 200,
+      "name": "edge <13.5f: 225ms = 13.500f, just under",
+      "bestMs": 225,
       "tier": "MASTER"
     },
     {
-      "name": "edge <13.0f: 216ms = 12.960f, just under",
-      "bestMs": 216,
+      "name": "edge <13.5f: 225ms = 13.500f, ON the line",
+      "bestMs": 225,
       "tier": "MASTER"
     },
     {
-      "name": "edge <13.0f: 217ms = 13.020f, just over",
-      "bestMs": 217,
+      "name": "edge <15.0f: 250ms = 15.000f, just under",
+      "bestMs": 250,
       "tier": "DIAMOND"
     },
     {
-      "name": "edge <14.5f: 241ms = 14.460f, just under",
-      "bestMs": 241,
+      "name": "edge <15.0f: 250ms = 15.000f, ON the line",
+      "bestMs": 250,
       "tier": "DIAMOND"
     },
     {
-      "name": "edge <14.5f: 242ms = 14.520f, just over",
-      "bestMs": 242,
+      "name": "edge <17.0f: 283ms = 16.980f, just under",
+      "bestMs": 283,
       "tier": "PLATINUM"
     },
     {
-      "name": "edge <16.0f: 266ms = 15.960f, just under",
-      "bestMs": 266,
-      "tier": "PLATINUM"
-    },
-    {
-      "name": "edge <16.0f: 267ms = 16.020f, just over",
-      "bestMs": 267,
+      "name": "edge <17.0f: 284ms = 17.040f, just over",
+      "bestMs": 284,
       "tier": "GOLD"
     },
     {
-      "name": "edge <18.0f: 299ms = 17.940f, just under",
-      "bestMs": 299,
+      "name": "edge <19.5f: 324ms = 19.440f, just under",
+      "bestMs": 324,
       "tier": "GOLD"
     },
     {
-      "name": "edge <18.0f: 300ms = 18.000f, ON the line",
-      "bestMs": 300,
+      "name": "edge <19.5f: 325ms = 19.500f, ON the line",
+      "bestMs": 325,
       "tier": "SILVER"
     },
     {
-      "name": "edge <20.5f: 341ms = 20.460f, just under",
-      "bestMs": 341,
+      "name": "edge <22.5f: 374ms = 22.440f, just under",
+      "bestMs": 374,
       "tier": "SILVER"
     },
     {
-      "name": "edge <20.5f: 342ms = 20.520f, just over",
-      "bestMs": 342,
+      "name": "edge <22.5f: 375ms = 22.500f, ON the line",
+      "bestMs": 375,
       "tier": "BRONZE"
     },
     {
-      "name": "edge <25.0f: 416ms = 24.960f, just under",
-      "bestMs": 416,
+      "name": "edge <26.0f: 433ms = 25.980f, just under",
+      "bestMs": 433,
       "tier": "BRONZE"
     },
     {
-      "name": "edge <25.0f: 417ms = 25.020f, just over",
-      "bestMs": 417,
-      "tier": "ROOKIE"
+      "name": "edge <26.0f: 434ms = 26.040f, just over",
+      "bestMs": 434,
+      "tier": "IRON"
+    },
+    {
+      "name": "edge <30.0f: 500ms = 30.000f, just under",
+      "bestMs": 500,
+      "tier": "IRON"
+    },
+    {
+      "name": "edge <30.0f: 500ms = 30.000f, ON the line",
+      "bestMs": 500,
+      "tier": "IRON"
     },
     {
       "name": "invalid (under the 10f PB floor) unranked",
       "bestMs": 108,
-      "tier": "UNRANKED"
+      "tier": "ULTIMATE MASTER"
     },
     {
       "name": "invalid (over the 200f PB ceiling) unranked",

@@ -2,7 +2,7 @@
 
 | File | Source (private repo `LoweKeyFlexin/controller-tester-fgc`) | Copied at | git blob |
 | --- | --- | --- | --- |
-| `reaction_score.json` | `tools/parity-fixtures/reaction_score.json` | `origin/main` @ `3aca8bd00fbc871561db3ead3c40f4ee003ed8c2` | `bb271c50e92f87bb76e9c3926df665329fd67c8f` |
+| `reaction_score.json` | `tools/parity-fixtures/reaction_score.json` | app #9685 policy v4 (2026-11-13; final source linked by receiving PR) | `b5e203cef0628d9a352eaa447f069ac7468fc2e6` |
 
 The fixture is the cross-port contract for the reaction formulas (band, tiers, full trial
 scoring). iOS is the source of truth; **never edit the copy to make the server pass** — if
@@ -19,3 +19,7 @@ pass**; nothing here will remind them.
 
 Refresh: `git show origin/main:tools/parity-fixtures/reaction_score.json > reaction_score.json`
 in the app repo, then update this table.
+
+The v4 refresh includes the app’s existing twelve-tier ladder (GRAND MASTER and IRON),
+which this server had missed while retaining a v2 copy. The Go ladder now follows
+the byte-identical fixture; LEGEND remains a ranking, never a time tier.
