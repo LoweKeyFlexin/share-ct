@@ -116,7 +116,7 @@ player's id.
 | `PATCH /v1/players/{id}` | bearer, own id | `200 {player_id, player_short, display_name, platform}` |
 | `PUT /v1/players/{id}/avatar` | bearer, own id | body `{"avatar": "<descriptor>" \| null}`; `200 {avatar}` with what was stored. The descriptor is ids only, never an image: `1:<fighter>:<outfit 1-9>:<color 0-9>[:<gear>[,<gear>…]]`, ids `[a-z0-9-]{1,32}`, at most 4 gear, at most 64 bytes. Anything else is stored as null, never an error. Board rows (`GET /v1/board`, `/v1/recent`, `/v1/drills/board`) carry the player's current `avatar` or null. |
 | `DELETE /v1/players/{id}` | bearer, own id | `204`, the player and every submission erased; `404` when the id is unknown, an already-erased player included, which the app treats as finished too |
-| `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
+| `POST /v1/scores` | bearer | `201 {submission_id, rank, board_size, reaction_crown_earned}`; `200` with the original row on a repeated `client_id`; `422 reason unknown_field` on any key outside the twelve declared |
 | `GET /v1/board` | – | `200 {source, window, entries:[{rank, player_ref, player_short, display_name, score, best_ms, avg_ms, accuracy, tier, platform, device_label, created_at}]}`; `?sort=fastest` (default) or `score`, see below |
 | `GET /v1/recent` | – | `200 {source:"recent", window:"all", entries:[...]}`; every entry also has `player_ref`. |
 | `POST /v1/reports` | bearer | `201 {report_id}` after a new report is stored; `202 {report_id}` for an identical earlier report |
@@ -458,3 +458,23 @@ Endless request hashes are unchanged. No attempt/input history is stored.
 ### Website Recent across score types
 
 The leaderboard dropdown’s **Recent** option calls `GET /v1/activity?limit=50` (default50, accepted1…50). It combines the public Reaction feed and explicitly published Drills run feeds, newest first. Entries retain their existing public score fields, with `activity_type` (`reaction` or `drill`) and, for drills, `drill_id`/`mode`. This is chronology, not ranking. Best-only Drills submissions never enter it; retention, erasure and publication consent remain unchanged. Apps do not use this endpoint.
+
+### Reaction leader achievement receipt
+
+The existing authenticated Reaction submit response also returns
+`reaction_crown_earned` (boolean). It certifies that this authenticated player held
+#1 on their input source's qualified rolling-30-day FASTEST board when the score
+was admitted. It is independent of `rank`, which remains the all-time standing.
+A previously certified achievement is also returned on later accepted runs so
+a deferred client write interrupted by termination can recover. The same ranking
+SQL and tie ordering select the winner; names and short suffixes
+are never identity evidence. Touch, pad and keyboard are independent boards.
+
+This is derived by the service, never a request key or a new public board field.
+Migration017 retains the bit on the existing submission inside its insertion
+transaction. A lost-response retry returns an already-earned true bit after rank
+or window changes. Player deletion erases the bit with the submission. No extra
+submitted data, endpoint, score history, logs, tracking or public identity is added.
+Older apps ignore it; apps talking to an older service default to false. Clients
+may permanently grant the earned cosmetic, but must defer ownership persistence
+until outside active Reaction timing. No test scores are sent to production.
