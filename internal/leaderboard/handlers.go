@@ -58,10 +58,12 @@ func New(log *slog.Logger, store *Store, auth func(http.Handler) http.Handler, n
 func (m *Module) Register(mux *http.ServeMux) {
 	mux.Handle("POST /v1/scores", m.auth(http.HandlerFunc(m.submit)))
 	mux.HandleFunc("GET /v1/board", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Vary", "Authorization")
 		if r.Header.Get("Authorization") == "" {
 			m.board(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "private, no-store")
 		m.auth(http.HandlerFunc(m.board)).ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /v1/recent", m.recent)
