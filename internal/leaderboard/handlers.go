@@ -86,9 +86,10 @@ type SubmitRequest struct {
 // rank and board_size are on the source's all-time board in its default (fastest)
 // order, so they agree with what a bare GET /v1/board shows.
 type SubmitResponse struct {
-	SubmissionID int64 `json:"submission_id"`
-	Rank         int   `json:"rank"`
-	BoardSize    int   `json:"board_size"`
+	ReactionCrownEarned bool  `json:"reaction_crown_earned"`
+	SubmissionID        int64 `json:"submission_id"`
+	Rank                int   `json:"rank"`
+	BoardSize           int   `json:"board_size"`
 }
 
 // Validate checks req against the app's own rules, trimming its strings in place, and
@@ -183,7 +184,7 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 	if created {
 		status = http.StatusCreated
 	}
-	httpx.WriteJSON(w, status, SubmitResponse{SubmissionID: sub.ID, Rank: rank, BoardSize: size})
+	httpx.WriteJSON(w, status, SubmitResponse{SubmissionID: sub.ID, Rank: rank, BoardSize: size, ReactionCrownEarned: sub.ReactionCrownEarned})
 }
 
 // Board is the GET /v1/board response (design brief §D). Entries is always a JSON

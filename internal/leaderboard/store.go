@@ -49,10 +49,11 @@ func ValidWindow(w string) bool { return w == WindowAll || w == Window30d }
 // Submission is one row of the submissions table. The ranked fields are the server's
 // recompute; the Client* fields keep what the app claimed, for audit only.
 type Submission struct {
-	ID       int64
-	PlayerID string
-	ClientID string
-	Source   string
+	ReactionCrownEarned bool // Server-derived receipt; never accepted from a request.
+	ID                  int64
+	PlayerID            string
+	ClientID            string
+	Source              string
 
 	BestMs     float64
 	AvgMs      float64
@@ -128,10 +129,30 @@ func (s *Store) Insert(ctx context.Context, sub *Submission) (created bool, err 
 		}
 		sub.ID, sub.CreatedAt, created = id, now, true
 	} else {
-		const existing = `SELECT id, source, created_at FROM submissions WHERE player_id = ? AND client_id = ?`
+		const existing = `SELECT id, source, created_at, reaction_crown_earned FROM submissions WHERE player_id = ? AND client_id = ?`
 		row := tx.QueryRowContext(ctx, existing, sub.PlayerID, sub.ClientID)
-		if err := row.Scan(&sub.ID, &sub.Source, &sub.CreatedAt); err != nil {
+		if err := row.Scan(&sub.ID, &sub.Source, &sub.CreatedAt, &sub.ReactionCrownEarned); err != nil {
 			return false, fmt.Errorf("select existing submission: %w", err)
+		}
+	}
+	// Certify the authenticated player's actual current source standing under
+	// the SAME transaction that admits this score. The ordinary all-time held
+	// rank is a different board. A retained true bit survives a lost-response
+	// retry after the player is overtaken; no names or short suffixes identify them.
+	if !sub.ReactionCrownEarned {
+		q := `WITH best AS (` + bestPerPlayer(SortFastest, sub.Source) + `)
+		  SELECT b.player_id FROM best b WHERE b.rn = 1
+		  ORDER BY ` + orderBy(SortFastest, "b.") + ` LIMIT 1`
+		var winner string
+		err := tx.QueryRowContext(ctx, q, sub.Source, now-int64(thirtyDays/time.Second)).Scan(&winner)
+		if err != nil && err != sql.ErrNoRows {
+			return false, fmt.Errorf("verify monthly reaction leader: %w", err)
+		}
+		if err == nil && winner == sub.PlayerID {
+			if _, err := tx.ExecContext(ctx, `UPDATE submissions SET reaction_crown_earned = 1 WHERE id = ? AND player_id = ?`, sub.ID, sub.PlayerID); err != nil {
+				return false, fmt.Errorf("retain reaction leader receipt: %w", err)
+			}
+			sub.ReactionCrownEarned = true
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE players SET last_seen_at = ? WHERE id = ?`, now, sub.PlayerID); err != nil {
