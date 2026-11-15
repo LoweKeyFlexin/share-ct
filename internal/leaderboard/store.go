@@ -140,6 +140,14 @@ func (s *Store) Insert(ctx context.Context, sub *Submission) (created bool, err 
 	// rank is a different board. A retained true bit survives a lost-response
 	// retry after the player is overtaken; no names or short suffixes identify them.
 	if !sub.ReactionCrownEarned {
+		// A later accepted run can restore an award whose client was terminated
+		// before its deferred local ownership write. It is the authenticated
+		// account's retained achievement, not a fresh claim on the current rank.
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM submissions WHERE player_id = ? AND reaction_crown_earned = 1)`, sub.PlayerID).Scan(&sub.ReactionCrownEarned); err != nil {
+			return false, fmt.Errorf("read retained reaction leader: %w", err)
+		}
+	}
+	if !sub.ReactionCrownEarned {
 		q := `WITH best AS (` + bestPerPlayer(SortFastest, sub.Source) + `)
 		  SELECT b.player_id FROM best b WHERE b.rn = 1
 		  ORDER BY ` + orderBy(SortFastest, "b.") + ` LIMIT 1`
@@ -149,10 +157,12 @@ func (s *Store) Insert(ctx context.Context, sub *Submission) (created bool, err 
 			return false, fmt.Errorf("verify monthly reaction leader: %w", err)
 		}
 		if err == nil && winner == sub.PlayerID {
-			if _, err := tx.ExecContext(ctx, `UPDATE submissions SET reaction_crown_earned = 1 WHERE id = ? AND player_id = ?`, sub.ID, sub.PlayerID); err != nil {
-				return false, fmt.Errorf("retain reaction leader receipt: %w", err)
-			}
 			sub.ReactionCrownEarned = true
+		}
+	}
+	if sub.ReactionCrownEarned {
+		if _, err := tx.ExecContext(ctx, `UPDATE submissions SET reaction_crown_earned = 1 WHERE id = ? AND player_id = ?`, sub.ID, sub.PlayerID); err != nil {
+			return false, fmt.Errorf("carry reaction leader receipt: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE players SET last_seen_at = ? WHERE id = ?`, now, sub.PlayerID); err != nil {

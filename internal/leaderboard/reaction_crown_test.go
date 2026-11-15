@@ -33,6 +33,9 @@ func TestReactionCrownPersistsOnIdempotentRetryAfterLosingLeadAndWindow(t *testi
 	}
 	hs.now = hs.now.Add(time.Second)
 	hs.submit(next, trial("faster", "touch", []float64{200, 205, 210}, 0))
+	if rec, restored := hs.submit(first, trial("restore-after-loss", "touch", []float64{240, 245, 250}, 0)); rec.Code != 201 || restored["rank"] != float64(2) || restored["reaction_crown_earned"] != true {
+		t.Fatalf("later accepted run restores past achievement: %d %v", rec.Code, restored)
+	}
 	hs.now = hs.now.Add(31 * 24 * time.Hour)
 	rec, retry := hs.submit(first, body)
 	if rec.Code != 200 || retry["submission_id"] != earned["submission_id"] || retry["reaction_crown_earned"] != true {

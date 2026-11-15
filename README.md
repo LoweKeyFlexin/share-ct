@@ -465,7 +465,9 @@ The existing authenticated Reaction submit response also returns
 `reaction_crown_earned` (boolean). It certifies that this authenticated player held
 #1 on their input source's qualified rolling-30-day FASTEST board when the score
 was admitted. It is independent of `rank`, which remains the all-time standing.
-The same ranking SQL and tie ordering select the winner; names and short suffixes
+A previously certified achievement is also returned on later accepted runs so
+a deferred client write interrupted by termination can recover. The same ranking
+SQL and tie ordering select the winner; names and short suffixes
 are never identity evidence. Touch, pad and keyboard are independent boards.
 
 This is derived by the service, never a request key or a new public board field.
