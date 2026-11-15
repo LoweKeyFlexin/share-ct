@@ -12,7 +12,12 @@ func TestReactionFloorMigrationPreservesRowsRetriesAndErasure(t *testing.T) {
 	s, _ := openTemp(t)
 	ctx := context.Background()
 	old := fstest.MapFS{}
+	floor := fstest.MapFS{}
 	for _, m := range embedded(t) {
+		if m.Version <= 16 {
+			name := fmt.Sprintf("%03d_%s.sql", m.Version, m.Name)
+			floor[name] = &fstest.MapFile{Data: migrationBytes(t, name)}
+		}
 		if m.Version < 16 {
 			name := fmt.Sprintf("%03d_%s.sql", m.Version, m.Name)
 			old[name] = &fstest.MapFile{Data: migrationBytes(t, name)}
@@ -56,7 +61,7 @@ func TestReactionFloorMigrationPreservesRowsRetriesAndErasure(t *testing.T) {
 		return out
 	}
 	before := snapshot()
-	if result, err := s.Migrate(ctx, migrations.FS); err != nil || result.Applied != 1 {
+	if result, err := s.Migrate(ctx, floor); err != nil || result.Applied != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
 	if after := snapshot(); after != before {
@@ -69,6 +74,17 @@ func TestReactionFloorMigrationPreservesRowsRetriesAndErasure(t *testing.T) {
 	if _, err := s.db.ExecContext(ctx, insert, 44, "six", 100.0, 120.0, "[100,120,140]", 100.0, 120.0); err == nil {
 		t.Fatal("retry uniqueness lost")
 	}
+	// The historical floor migration must preserve its old row byte-for-byte.
+	// Later additive migrations are exercised separately, including the derived
+	// receipt's conservative backfill and its existing deletion lifetime.
+	if _, err := s.Migrate(ctx, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	var unearned int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM submissions WHERE reaction_crown_earned = 0`).Scan(&unearned); err != nil || unearned != 2 {
+		t.Fatalf("legacy crown backfill count=%d err=%v", unearned, err)
+	}
+	exec(`UPDATE submissions SET reaction_crown_earned = 1 WHERE id = 41`)
 	if result, err := s.Migrate(ctx, migrations.FS); err != nil || result.Applied != 0 {
 		t.Fatalf("restart %+v %v", result, err)
 	}
