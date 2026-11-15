@@ -57,7 +57,13 @@ func New(log *slog.Logger, store *Store, auth func(http.Handler) http.Handler, n
 // Register mounts the routes on mux.
 func (m *Module) Register(mux *http.ServeMux) {
 	mux.Handle("POST /v1/scores", m.auth(http.HandlerFunc(m.submit)))
-	mux.HandleFunc("GET /v1/board", m.board)
+	mux.HandleFunc("GET /v1/board", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			m.board(w, r)
+			return
+		}
+		m.auth(http.HandlerFunc(m.board)).ServeHTTP(w, r)
+	})
 	mux.HandleFunc("GET /v1/recent", m.recent)
 }
 
@@ -190,10 +196,11 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 // Board is the GET /v1/board response (design brief §D). Entries is always a JSON
 // array, never null.
 type Board struct {
-	Source      string  `json:"source"`
-	Window      string  `json:"window"`
-	Entries     []Entry `json:"entries"`
-	PlayerCount int     `json:"player_count"`
+	ReactionCrown *ReactionCrownReceipt `json:"reaction_crown,omitempty"`
+	Source        string                `json:"source"`
+	Window        string                `json:"window"`
+	Entries       []Entry               `json:"entries"`
+	PlayerCount   int                   `json:"player_count"`
 }
 
 // board is GET /v1/board?source=touch|pad|keyboard&window=all|30d&sort=fastest|score&limit=50.
@@ -288,6 +295,19 @@ func (m *Module) board(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	w.Header().Set("Cache-Control", "no-cache")
-	httpx.WriteJSON(w, http.StatusOK, Board{Source: source, Window: window, Entries: entries, PlayerCount: count})
+	result := Board{Source: source, Window: window, Entries: entries, PlayerCount: count}
+	if player, authenticated := players.FromContext(r.Context()); authenticated {
+		result.ReactionCrown, err = m.store.ReactionCrown(r.Context(), player.ID)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		// The private achievement belongs only to the authenticated requester.
+		// Never allow a shared cache to replay it to another account.
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("Vary", "Authorization")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
 }
