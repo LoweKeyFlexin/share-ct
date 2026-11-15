@@ -478,3 +478,12 @@ submitted data, endpoint, score history, logs, tracking or public identity is ad
 Older apps ignore it; apps talking to an older service default to false. Clients
 may permanently grant the earned cosmetic, but must defer ownership persistence
 until outside active Reaction timing. No test scores are sent to production.
+
+Authenticated `GET /v1/board` replies may include a private `reaction_crown`
+receipt (`submission_id`, `client_id`) for the requesting account. Anonymous board
+reads remain public and omit it. The receipt certifies an existing leader of any
+qualified source-specific rolling-30-day fastest board, irrespective of the visible
+filter, or restores a previously earned receipt. It marks an existing submission;
+it creates no score, identity, request key, or separate achievement history. Private
+replies use `Cache-Control: private, no-store` and `Vary: Authorization`. Invalid
+bearer credentials receive401; older clients ignore the optional response field.
