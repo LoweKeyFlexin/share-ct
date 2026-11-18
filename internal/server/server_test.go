@@ -506,3 +506,20 @@ func TestReactionBoardOffersFastestNotScore(t *testing.T) {
 		t.Error("the footer still explains the removed score ranking")
 	}
 }
+
+// Windows and Linux rows get their own glyph (Aaron, 2026-11-17), drawn with the same 1.2
+// stroke as Apple and Android.
+func TestPageDrawsWindowsAndLinuxGlyphs(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+	for _, want := range []string{
+		`case 'windows': return { icon:'windows', label:'Windows' };`,
+		`case 'linux': return { icon:'linux', label:'Linux' };`,
+		`info.icon === 'windows'`,
+		`info.icon === 'linux'`,
+		`svg.setAttribute('stroke-width', '1.2');`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+}

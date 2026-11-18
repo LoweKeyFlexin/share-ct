@@ -73,9 +73,11 @@ var reservedNormalized = map[string]bool{
 	"NAME HIDDEN": true,
 }
 
-var platforms = map[string]bool{"ios": true, "mac": true, "windows": true, "android": true}
+// linux added 2026-11-17 (Aaron: "Yes start accepting Linux and Windows") for the desktop and
+// Steam Deck builds of Fighter CT.
+var platforms = map[string]bool{"ios": true, "mac": true, "windows": true, "linux": true, "android": true}
 
-// ValidPlatform reports whether p is one of ios, mac, windows, android.
+// ValidPlatform reports whether p is one of ios, mac, windows, linux, android.
 func ValidPlatform(p string) bool { return platforms[p] }
 
 // isSwiftWhitespace mirrors CharacterSet.whitespaces: Unicode Zs plus tab.
