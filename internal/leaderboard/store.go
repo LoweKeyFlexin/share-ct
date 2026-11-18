@@ -178,26 +178,23 @@ func nullable(s string) any {
 	return s
 }
 
-// The two board orders (M1 delta §2). Fastest is the default: Aaron's pick A ranks the
-// fastest single attempt, on the app's local board and here alike, so a bare /v1/board
-// and the app agree about who is first. Score keeps the M0 order.
+// The Reaction board has one order: the fastest single attempt (Aaron, 2026-11-17: the
+// fastest time wins; the score metric is removed from global and local boards). SortScore
+// stays a valid parameter only so older app builds that still ask for it keep working: it
+// is served in the fastest order.
 const (
 	SortFastest = "fastest"
 	SortScore   = "score"
 )
 
-// ValidSort reports whether s is fastest or score.
+// ValidSort reports whether s is fastest or score (the latter kept for older clients).
 func ValidSort(s string) bool { return s == SortFastest || s == SortScore }
 
-// orderBy is the ORDER BY list for sort over the columns of alias (a table alias with
-// its dot, or "" for bare columns). Callers check ValidSort first; anything but score is
-// fastest here. Ties break the same way under both: the other measure, then the earlier
-// created_at, then id.
-func orderBy(sort, alias string) string {
-	if sort == SortScore {
-		return alias + "score DESC, " + alias + "best_ms ASC, " + alias + "created_at ASC, " + alias + "id ASC"
-	}
-	return alias + "best_ms ASC, " + alias + "score DESC, " + alias + "created_at ASC, " + alias + "id ASC"
+// orderBy is the ORDER BY list over the columns of alias (a table alias with its dot, or ""
+// for bare columns). Every sort ranks by best_ms; an exact tie goes to the earlier
+// created_at, then id. The score never breaks a tie.
+func orderBy(_ string, alias string) string {
+	return alias + "best_ms ASC, " + alias + "created_at ASC, " + alias + "id ASC"
 }
 
 // Entry is one board row (design brief §D, M1 delta §1). DeviceLabel and CreatedAt are
@@ -464,7 +461,7 @@ func (s *Store) Bests(ctx context.Context, playerID string) (players.Bests, int,
 	q := `WITH best AS (
 	    SELECT s.source, s.score, s.best_ms, s.avg_ms, s.accuracy, s.platform, s.created_at,
 	           ROW_NUMBER() OVER (PARTITION BY source
-	                              ORDER BY s.score DESC, s.best_ms ASC, s.created_at ASC, s.id ASC) AS rn
+	                              ORDER BY s.best_ms ASC, s.created_at ASC, s.id ASC) AS rn
 	    FROM submissions s WHERE player_id = ? AND ` + qualifiedSQL + `)
 	  SELECT source, score, best_ms, avg_ms, accuracy, platform, created_at FROM best WHERE rn = 1`
 	var b players.Bests

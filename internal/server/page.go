@@ -43,7 +43,7 @@ const boardScriptSource = `(function () {
   // run with a slower single reads as a LOWER tier. Correct, and baffling unless said.
   var RANKED_BY = {
     recent: 'Every score as it arrives, newest first — all inputs mixed.',
-    fastest: 'Top 10, by fastest single attempt. One row per player: their fastest run.',
+    fastest: 'Top 10, by fastest single attempt. One row per player: their fastest run. An exact tie goes to whoever set it first.',
     score: 'Ranked by highest score. One row per player: their best-SCORING run — so the time and tier are from that run, not their fastest. Tier is a speed rank.'
   };
 
@@ -405,11 +405,13 @@ const boardScriptSource = `(function () {
 
     var dl = el('dl', 'detail');
     if (!endless) {
-      def(dl, 'best', frames(e.best_ms) + ' · ' + Math.round(e.best_ms) + ' ms');
-      def(dl, 'avg', frames(e.avg_ms) + ' · ' + Math.round(e.avg_ms) + ' ms');
+      def(dl, 'best', frames(e.best_ms) + ' · ' + e.best_ms.toFixed(2) + ' ms');
+      def(dl, 'avg', frames(e.avg_ms) + ' · ' + e.avg_ms.toFixed(2) + ' ms');
     }
     if (typeof e.accuracy === 'number') def(dl, 'landed', Math.round(e.accuracy * 100) + '%');
-    def(dl, 'score', String(e.score));
+    // Reaction boards rank by the fastest time only (Aaron, 2026-11-17): no score row there.
+    // Endless and Arcade keep theirs, because points are what rank them.
+    if (endless) def(dl, 'score', String(e.score));
     if (arcade) {
       def(dl, 'run', e.completed ? 'ARCADE CLEAR' : 'GAME OVER');
       def(dl, 'progress', arcadeInfo.progress);
@@ -433,7 +435,7 @@ const boardScriptSource = `(function () {
       var fastest = Math.min.apply(null, e.attempts_ms);
       e.attempts_ms.forEach(function (ms) {
         runs.appendChild(el('span', 'run' + (ms === fastest ? ' best' : ''),
-                            frames(ms) + ' · ' + Math.round(ms) + ' ms'));
+                            frames(ms) + ' · ' + ms.toFixed(2) + ' ms'));
       });
       // A misfire consumed an attempt and produced no time, so the run is short. Showing
       // the gap is the difference between "they landed two" and "they only took two".
@@ -511,11 +513,19 @@ const boardScriptSource = `(function () {
       });
   }
 
+  // HIGH SCORE ranks Drills by points. The Reaction board has no score ranking any more
+  // (Aaron, 2026-11-17: the fastest time wins), so there the button is hidden.
+  function syncReactionViews() {
+    document.querySelector('[data-view="score"]').hidden = !state.drill;
+    if (!state.drill && state.view === 'score') state.view = 'fastest';
+  }
+
   Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
     button.addEventListener('click', function () {
       state.view = button.getAttribute('data-view');
       if (state.drill === 'recent') state.view = 'recent';
       else if (state.drill && state.view === 'fastest') state.view = 'score';
+      syncReactionViews();
       Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (other) {
         other.setAttribute('aria-pressed', String(other.getAttribute('data-view') === state.view));
       });
@@ -532,6 +542,7 @@ const boardScriptSource = `(function () {
     document.getElementById('drill-mode-choice').hidden = !state.drill || state.drill === 'mental-stack' || state.drill === 'recent';
     if (state.drill && state.view === 'fastest') state.view = 'score';
     document.querySelector('[data-view="fastest"]').disabled = !!state.drill;
+    syncReactionViews();
     Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (button) {
       button.setAttribute('aria-pressed', String(button.getAttribute('data-view') === state.view));
     });
@@ -542,6 +553,7 @@ const boardScriptSource = `(function () {
     load();
   });
   loadAvatarArt();
+  syncReactionViews();
   load();
   setInterval(function () { if (state.view === 'recent' && !document.hidden) load(); }, 15000);
 })();
@@ -562,7 +574,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".57"
+const pageVersion = ".58"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
@@ -812,15 +824,14 @@ const indexHead = `<!doctype html>
       <nav class="tabs" id="board-views" aria-label="View">
         <button type="button" data-view="recent" aria-pressed="true">RECENT</button>
         <button type="button" data-view="fastest" aria-pressed="false">FASTEST</button>
-        <button type="button" data-view="score" aria-pressed="false">HIGH SCORE</button>
+        <button type="button" data-view="score" aria-pressed="false" hidden>HIGH SCORE</button>
       </nav>
     </div>
     <ol id="board" class="board" hidden></ol>
     <p id="status" role="status" aria-live="polite"></p>
   </section>
   <footer>
-    <p>Reaction Test score rewards consistency, not just one good rep: the biggest bonuses go to a trial whose
-       <strong>three attempts are all under 13 frames</strong> (216.7&nbsp;ms). A slower best can outscore a faster one.</p>
+    <p>Reaction Test boards rank by the <strong>fastest single attempt</strong>. An exact tie goes to whoever set it first.</p>
     <p>Reaction scores are recomputed on the server from attempt timings. Endless scores count successful active reactions; correct non-actions earn no points. Arcade ranks clears by time and partial attempts by whole enemies defeated, with consistency and clear-time bonus points. No accounts, no tracking; erase your data from the app.</p>
     <p class="note">Touch, keyboard and gamepads all have their own latency.</p>
   </footer>
