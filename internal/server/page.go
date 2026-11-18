@@ -142,7 +142,8 @@ const boardScriptSource = `(function () {
       case 'ios': return { icon:'apple', label:'iOS / iPadOS' };
       case 'android': return { icon:'android', label:'Android' };
       case 'mac': return { icon:null, label:'Mac' };
-      case 'windows': return { icon:null, label:'Windows' };
+      case 'windows': return { icon:'windows', label:'Windows' };
+      case 'linux': return { icon:'linux', label:'Linux' };
       default: return { icon:null, label:'Unknown platform' };
     }
   }
@@ -155,7 +156,8 @@ const boardScriptSource = `(function () {
     svg.setAttribute('aria-label', info.label);
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '1.6');
+    // One shared stroke for every platform glyph (Aaron, 2026-11-17), as in the app.
+    svg.setAttribute('stroke-width', '1.2');
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
     function shape(tag, attrs) {
@@ -169,8 +171,17 @@ const boardScriptSource = `(function () {
     }
     else if (info.icon === 'android') {
       shape("path", {"d": "M4 15a8 8 0 0 1 16 0v4H4zM7 7 5 3M17 7l2-4"});
-      shape("circle", {"cx": "8.5", "cy": "13", "r": ".8", "fill": "currentColor", "stroke": "none"});
-      shape("circle", {"cx": "15.5", "cy": "13", "r": ".8", "fill": "currentColor", "stroke": "none"});
+      shape("circle", {"cx": "8.5", "cy": "13", "r": ".6", "fill": "currentColor", "stroke": "none"});
+      shape("circle", {"cx": "15.5", "cy": "13", "r": ".6", "fill": "currentColor", "stroke": "none"});
+    }
+    else if (info.icon === 'windows') {
+      // Aaron's waving four-pane flag, traced along the centre of his drawing (2026-11-17).
+      shape("path", {"d": "M4.74 9.97C4.98 8.53 5.33 7.13 5.71 5.72C5.84 5.25 5.88 4.44 6.21 4.07C6.50 3.76 7.18 3.64 7.57 3.53C8.89 3.15 10.34 3.07 11.63 3.61C11.97 3.75 12.60 4.02 12.78 4.37C12.97 4.74 12.74 5.34 12.64 5.72C12.37 6.81 12.09 7.90 11.80 8.99C11.71 9.33 11.66 10.14 11.35 10.34C11.21 10.42 11.03 10.36 10.88 10.32C10.48 10.23 10.13 10.00 9.74 9.87C8.71 9.55 7.72 9.52 6.66 9.70C6.10 9.79 5.29 10.20 4.74 9.97M21.32 5.85C21.25 6.17 21.26 6.51 21.19 6.83C20.95 7.89 20.63 8.92 20.38 9.97C20.25 10.49 20.18 11.37 19.84 11.79C19.60 12.09 19.04 12.19 18.69 12.32C17.41 12.79 15.81 12.92 14.53 12.42C14.13 12.26 13.43 12.08 13.22 11.66C13.02 11.26 13.25 10.67 13.35 10.28C13.63 9.17 13.91 8.07 14.20 6.97C14.29 6.65 14.37 6.33 14.45 6.02C14.49 5.89 14.51 5.71 14.65 5.63C14.79 5.55 14.99 5.63 15.14 5.66C15.57 5.76 15.97 5.99 16.39 6.12C17.30 6.40 18.37 6.41 19.30 6.19C19.85 6.06 20.76 5.64 21.32 5.85M2.74 18.38L2.64 18.28C2.72 17.95 2.71 17.60 2.79 17.27C3.03 16.19 3.35 15.13 3.61 14.06C3.73 13.57 3.79 12.70 4.12 12.32C4.41 11.99 5.01 11.89 5.41 11.77C6.69 11.39 7.97 11.26 9.26 11.66C9.68 11.79 10.47 12.07 10.68 12.47C10.85 12.79 10.70 13.26 10.61 13.59C10.40 14.41 10.20 15.23 9.98 16.05C9.83 16.64 9.68 17.22 9.53 17.81C9.47 18.02 9.46 18.35 9.25 18.48C9.09 18.58 8.86 18.49 8.69 18.45C8.15 18.33 7.68 18.01 7.13 17.92C5.90 17.72 4.88 17.94 3.69 18.23C3.38 18.30 3.05 18.30 2.74 18.38M19.13 14.13C18.89 15.51 18.56 16.85 18.20 18.21C18.07 18.73 18.00 19.50 17.68 19.93C17.39 20.31 16.65 20.42 16.22 20.54C14.91 20.89 13.54 20.95 12.27 20.44C11.91 20.29 11.39 20.13 11.16 19.80C10.92 19.43 11.15 18.84 11.25 18.45C11.53 17.33 11.83 16.22 12.11 15.11C12.19 14.79 12.25 13.93 12.58 13.78C12.73 13.71 12.93 13.79 13.08 13.83C13.56 13.94 13.98 14.24 14.46 14.35C15.35 14.56 16.23 14.61 17.13 14.45C17.75 14.34 18.49 14.00 19.13 14.13"});
+    }
+    else if (info.icon === 'linux') {
+      // A terminal: a prompt in a window (Aaron, 2026-11-17).
+      shape("rect", {"x": "2.8", "y": "4.5", "width": "18.4", "height": "15", "rx": "2.2"});
+      shape("path", {"d": "M7 10L10 12.5L7 15M12.5 15.5H17"});
     }
     return svg;
   }
@@ -574,7 +585,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".58"
+const pageVersion = ".59"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).

@@ -66,12 +66,12 @@ func TestPolicyRefusesWithoutMaskingStoredNames(t *testing.T) {
 }
 
 func TestValidPlatform(t *testing.T) {
-	for _, p := range []string{"ios", "mac", "windows", "android"} {
+	for _, p := range []string{"ios", "mac", "windows", "linux", "android"} {
 		if !ValidPlatform(p) {
 			t.Errorf("%s must be valid", p)
 		}
 	}
-	for _, p := range []string{"", "iOS", "linux", "web"} {
+	for _, p := range []string{"", "iOS", "Linux", "web", "playstation"} {
 		if ValidPlatform(p) {
 			t.Errorf("%q must be invalid", p)
 		}

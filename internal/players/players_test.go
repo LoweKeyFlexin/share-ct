@@ -138,7 +138,7 @@ func TestCreateRejects(t *testing.T) {
 		"long":        {`{"display_name":"` + strings.Repeat("a", MaxNameLen+1) + `","platform":"ios"}`, 422, "name_too_long"},
 		"chars":       {`{"display_name":"a!b","platform":"ios"}`, 422, "name_invalid_characters"},
 		"reserved":    {`{"display_name":"ADMIN","platform":"ios"}`, 422, "name_reserved"},
-		"platform":    {`{"display_name":"Aaron","platform":"linux"}`, 422, "platform"},
+		"platform":    {`{"display_name":"Aaron","platform":"web"}`, 422, "platform"},
 		"no platform": {`{"display_name":"Aaron"}`, 422, "platform"},
 		"bad json":    {`{"display_name":`, 400, "json"},
 		"empty":       {``, 400, "json"},
