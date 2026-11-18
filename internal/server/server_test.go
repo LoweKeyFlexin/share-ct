@@ -200,11 +200,11 @@ func TestIndexPageNamesTheProductAndNotTheHost(t *testing.T) {
 	_, body := do(t, mustApp(t), "GET", "/")
 
 	for _, want := range []string{
-		"Share CT",           // the service's name, in the title and the masthead
-		"Fighter CT",         // the app it serves, named in the description line
-		"Ver " + pageVersion, // the page's own revision, top right
-		"opt-in",             // the promise that predates the leaderboard
-		"13 frames",          // what the score actually rewards, not an adjective
+		"Share CT",               // the service's name, in the title and the masthead
+		"Fighter CT",             // the app it serves, named in the description line
+		"Ver " + pageVersion,     // the page's own revision, top right
+		"opt-in",                 // the promise that predates the leaderboard
+		"fastest single attempt", // what ranks the Reaction board (Aaron, 2026-11-17)
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page must say %q", want)
@@ -483,5 +483,26 @@ func TestFastestIsATopTenAndBothPodiumsAreStruckMetal(t *testing.T) {
 			t.Errorf("symbol %q (U+%04X) in the page; the podium must be type, not glyphs", r, r)
 			break
 		}
+	}
+}
+
+// The Reaction board ranks by the fastest time only (Aaron, 2026-11-17: the score metric is
+// removed from the boards). HIGH SCORE stays in the page because Drills rank by points, but
+// it starts hidden and is shown only while a drill is selected; Reaction rows carry no score
+// row and show milliseconds to two decimals, as the app does.
+func TestReactionBoardOffersFastestNotScore(t *testing.T) {
+	_, body := do(t, mustApp(t), "GET", "/")
+	for _, want := range []string{
+		`data-view="score" aria-pressed="false" hidden>HIGH SCORE`,
+		`document.querySelector('[data-view="score"]').hidden = !state.drill;`,
+		`if (endless) def(dl, 'score', String(e.score));`,
+		`e.best_ms.toFixed(2) + ' ms'`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "A slower best can outscore a faster one") {
+		t.Error("the footer still explains the removed score ranking")
 	}
 }

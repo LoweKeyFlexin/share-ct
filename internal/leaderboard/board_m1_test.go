@@ -76,10 +76,10 @@ func TestBoardEntryCarriesDeviceLabelAndCreatedAtOfTheWinningRow(t *testing.T) {
 	}
 }
 
-// Which row wins depends on the sort. One player, two rows that disagree: the trial
-// with a misfire is the faster single but the lower score. Under fastest the board
-// shows it, and its pad; under score it shows the other. A board that picked the winner
-// one way and ordered the other would list a pad the ranking is not about.
+// The winning row is always the fastest single attempt (Aaron, 2026-11-17: the score
+// metric is removed from the boards). One player, two rows that disagree: the trial with a
+// misfire is the faster single but the lower score. Every sort, including sort=score kept for
+// older app builds, shows the faster row and its pad.
 func TestBoardWinningRowFollowsTheSort(t *testing.T) {
 	hs := newHarness(t)
 	_, tok := hs.named("AARON")
@@ -95,7 +95,7 @@ func TestBoardWinningRowFollowsTheSort(t *testing.T) {
 	cases := []struct{ query, label, created string }{
 		{"?source=pad", "Hit Box", "2026-09-11T03:00:00Z"},
 		{"?source=pad&sort=fastest", "Hit Box", "2026-09-11T03:00:00Z"},
-		{"?source=pad&sort=score", "DualSense Wireless Controller", "2026-09-11T04:00:00Z"},
+		{"?source=pad&sort=score", "Hit Box", "2026-09-11T03:00:00Z"},
 	}
 	for _, c := range cases {
 		entries := hs.board(c.query)
@@ -161,8 +161,8 @@ func TestBoardSortOrders(t *testing.T) {
 			"no sort= must default to FASTEST (pick A): a bare board and the app must agree"},
 		{"?source=pad&window=all&sort=fastest", []string{"QUICK", "SLOWPOKE"},
 			"sort=fastest orders by best_ms ASC"},
-		{"?source=pad&window=all&sort=score", []string{"SLOWPOKE", "QUICK"},
-			"sort=score orders by score DESC"},
+		{"?source=pad&window=all&sort=score", []string{"QUICK", "SLOWPOKE"},
+			"sort=score is kept for older app builds and is served in the fastest order (Aaron, 2026-11-17)"},
 	}
 	for _, c := range cases {
 		t.Run(c.query, func(t *testing.T) {
@@ -186,7 +186,8 @@ func TestBoardSortOrders(t *testing.T) {
 	}
 }
 
-// Under fastest, a tie on best_ms goes to the higher score, then to the earlier row.
+// A tie on best_ms goes to the earlier row, then id. The score never breaks a tie
+// (Aaron, 2026-11-17: the fastest time wins; the score metric is removed from the boards).
 func TestBoardFastestTieBreaks(t *testing.T) {
 	hs := newHarness(t)
 	_, early := hs.named("EARLY")
@@ -206,11 +207,11 @@ func TestBoardFastestTieBreaks(t *testing.T) {
 	for _, e := range got {
 		names = append(names, e["display_name"].(string))
 	}
-	if want := []string{"EARLY", "LATE", "LOWER"}; !slices.Equal(names, want) {
-		t.Errorf("order = %v, want %v: equal best_ms breaks to the higher score, then the earlier created_at", names, want)
+	if want := []string{"LOWER", "EARLY", "LATE"}; !slices.Equal(names, want) {
+		t.Errorf("order = %v, want %v: equal best_ms breaks to the earlier created_at, never to the score", names, want)
 	}
 	// The POST reply's rank is on the same default order.
-	for i, name := range []string{"EARLY", "LATE", "LOWER"} {
+	for i, name := range []string{"LOWER", "EARLY", "LATE"} {
 		var id string
 		if err := hs.db.DB().QueryRow(`SELECT id FROM players WHERE display_name = ?`, name).Scan(&id); err != nil {
 			t.Fatal(err)
