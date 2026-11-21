@@ -233,7 +233,7 @@ type Entry struct {
 }
 
 // backingThresholdMs and backingWithinMs are the SQL spellings of the Go constants, built
-// from them at init rather than typed twice: 13.5 frames and 2.5 frames in milliseconds. A
+// from them at init rather than typed twice: 13.5 frames and 3.0 frames in milliseconds. A
 // hand-written 225.0 here would be a second source of truth for a number Aaron ruled once.
 var (
 	backingThresholdMs = strconv.FormatFloat(BackingThresholdFrames*FrameMs, 'f', -1, 64)

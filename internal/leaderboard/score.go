@@ -257,7 +257,7 @@ const (
 	// player for being inconsistent.
 	BackingThresholdFrames float64 = 13.5
 	// Same-trial second-fastest gap, inclusive (Aaron 2026-11-13).
-	BackingWithinFrames float64 = 2.5
+	BackingWithinFrames float64 = 3.0
 	// BackingSinceUnix GRANDFATHERS every run submitted before it. Aaron, 2026-09-18:
 	// "Let's grandfather all existing EXCEPT for that 10 frame first place", and then,
 	// on the date of that run, "That one was September 16th. You can lop that one off

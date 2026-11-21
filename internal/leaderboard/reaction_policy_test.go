@@ -11,9 +11,11 @@ func TestBackedSixFramePolicyThroughSubmissionAndSQL(t *testing.T) {
 		attempts []float64
 		ranked   bool
 	}{
-		{"six-frame inclusive", []float64{6 * FrameMs, 6*FrameMs + 2.5*FrameMs, 12 * FrameMs}, true},
+		{"six-frame inclusive", []float64{6 * FrameMs, 6*FrameMs + 3.0*FrameMs, 12 * FrameMs}, true},
 		{"witnessed run", []float64{12.1 * FrameMs, 8.8 * FrameMs, 11.1 * FrameMs}, true},
-		{"just outside backing", []float64{6 * FrameMs, 6*FrameMs + 2.5*FrameMs + 0.001, 12 * FrameMs}, false},
+		{"reported mobile trial", []float64{7.9 * FrameMs, 13.0 * FrameMs, 10.5 * FrameMs}, true},
+		{"reported Duo trial", []float64{10.8 * FrameMs, 7.9 * FrameMs, 12.9 * FrameMs}, true},
+		{"just outside backing", []float64{6 * FrameMs, 6*FrameMs + 3.0*FrameMs + 0.001, 12 * FrameMs}, false},
 		{"unbacked fast run", []float64{6 * FrameMs, 12 * FrameMs, 13 * FrameMs}, false},
 	}
 	for _, c := range cases {

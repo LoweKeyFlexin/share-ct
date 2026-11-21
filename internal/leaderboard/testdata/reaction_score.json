@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "description": "Reaction formula parity v4: Aaron 2026-11-13 approved 6F ranked minimum; 2.5F same-trial backing remains a separate qualification rule. Timing and scoring arithmetic unchanged.",
+  "description": "Reaction formula parity v4: Aaron 2026-11-13 approved 6F ranked minimum; 3.0F same-trial backing is a separate qualification rule. Timing and scoring arithmetic unchanged.",
   "constants": {
     "trialAttempts": 3,
     "frameMs": 16.666666666666668,

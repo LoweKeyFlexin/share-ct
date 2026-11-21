@@ -21,7 +21,7 @@ import (
 //
 // Updating this constant is therefore part of updating the fixture, never a separate
 // chore: a stale pin is not a failing test, it is a passing one.
-const fixtureBlob = "b5e203cef0628d9a352eaa447f069ac7468fc2e6"
+const fixtureBlob = "dae249294dc6d86b957f46a4091016dbc5713f63"
 
 type fixture struct {
 	Version   int `json:"version"`
