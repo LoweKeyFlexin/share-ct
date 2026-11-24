@@ -27,6 +27,7 @@ func main() {
 	fgc := flag.String("fgc", "", "controller-tester-fgc checkout")
 	out := flag.String("out", "internal/server/static/board-avatars.json", "output file")
 	cosmetics := flag.String("cosmetics", "", "the kit's exported cosmetics folder (default: <kit>/PuppetPresentation/Resources/PuppetPresentation/cosmetics)")
+	refGear := flag.String("refgear", "", "fgc ReferenceGear folder (default: <fgc>/Sources/CTDrillsDiagnostic/ReferenceGear when present)")
 	flag.Parse()
 	if *kit == "" || *fgc == "" {
 		flag.Usage()
@@ -35,12 +36,19 @@ func main() {
 	if *cosmetics == "" {
 		*cosmetics = filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation/cosmetics")
 	}
+	if *refGear == "" {
+		candidate := filepath.Join(*fgc, "Sources/CTDrillsDiagnostic/ReferenceGear")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			*refGear = candidate
+		}
+	}
 	data, err := avatarart.BakeJSON(avatarart.Inputs{
-		KitResources: filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation"),
-		GearDir:      filepath.Join(*fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
-		Roster:       filepath.Join(*fgc, "CTCore/FighterRoster.swift"),
-		Colours:      filepath.Join(*fgc, "CTCore/DrillsColourCatalog.swift"),
-		Cosmetics:    *cosmetics,
+		KitResources:  filepath.Join(*kit, "PuppetPresentation/Resources/PuppetPresentation"),
+		GearDir:       filepath.Join(*fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
+		Roster:        filepath.Join(*fgc, "CTCore/FighterRoster.swift"),
+		Colours:       filepath.Join(*fgc, "CTCore/DrillsColourCatalog.swift"),
+		Cosmetics:     *cosmetics,
+		ReferenceGear: *refGear,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "avatarbake:", err)

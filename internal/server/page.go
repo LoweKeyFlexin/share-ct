@@ -203,6 +203,9 @@ const boardScriptSource = `(function () {
 
   var AVATAR_V3 = /^3:[a-z0-9-]{1,32}:[1-9]:[0-9]:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3}:[a-z0-9-]{0,32}:[a-z0-9-]{1,3}(,[a-z0-9-]{1,3}){0,3}$/;
 
+  var BACK_SWORDS = ['katana', 'greatsword', 'bokken', 'fishbone-saber', 'candy-cane-sword', 'trident-sword'];
+  var SWORDLESS_SHOULDERS = ['lunch-break', 'charcoal-cat'];
+
   // The head markup an item draws on one outfit's art (src = the fighter for Outfit 1, or
   // one of its outfits), or null when that art has none.
   function catalogValue(map, id) {
@@ -213,6 +216,17 @@ const boardScriptSource = `(function () {
     if (Array.isArray(paths) && paths.length) return paths;
     if (id === 'pirate-hat' && Array.isArray(src.hat) && src.hat.length) return src.hat;
     return null;
+  }
+  function refAccessory(art, src, id, slot) {
+    var acc = catalogValue(art && art.accessories, id);
+    if (!acc || acc.slot !== slot || !Array.isArray(acc.components) || !acc.components.length) return null;
+    var fits = src && src.ref_fits;
+    if (!fits) return null;
+    for (var i = 0; i < acc.components.length; i++) {
+      var m = catalogValue(fits, acc.components[i].id);
+      if (!Array.isArray(m) || m.length !== 6) return null;
+    }
+    return acc;
   }
 
   // Recipes only select our static catalog; unknown future values keep their known body/outfit.
@@ -226,12 +240,29 @@ const boardScriptSource = `(function () {
     var outfit = !bonus && f[2] !== '1' && catalogValue(fighter.outfits, f[2]) ? f[2] : '1';
     var src = outfit === '1' ? fighter : fighter.outfits[outfit];
     var ids = f[4] ? f[4].split(',') : [];
-    var gear = null, back = null, shoulder = null;
+    var gear = null, back = null, shoulder = null, hand = null;
+    var refHead = null, refBack = null, refShoulder = null, refHand = null;
     ids.forEach(function (id) {
-      if (!gear && gearHead(src, id)) gear = id;
-      if (!back && Array.isArray(catalogValue(fighter.back, id))) back = id;
-      if (!shoulder && Array.isArray(catalogValue(fighter.shoulder, id))) shoulder = id;
+      if (!gear) {
+        if (gearHead(src, id)) gear = id;
+        else if ((refHead = refAccessory(art, src, id, 'head'))) gear = id;
+      }
+      if (!back) {
+        if (Array.isArray(catalogValue(fighter.back, id))) back = id;
+        else if ((refBack = refAccessory(art, src, id, 'back'))) back = id;
+      }
+      if (!shoulder) {
+        if (Array.isArray(catalogValue(fighter.shoulder, id))) shoulder = id;
+        else if ((refShoulder = refAccessory(art, src, id, 'shoulder'))) shoulder = id;
+      }
+      if (!hand && (refHand = refAccessory(art, src, id, 'hand'))) hand = id;
     });
+    // Native conflict rules (CTReferenceCosmetics.swift): Witching Hour's brim clears the
+    // shoulder, and back swords clear Lunch Break / Charcoal Cat.
+    if (gear === 'witching-hour' || (back && shoulder && BACK_SWORDS.indexOf(back) >= 0 && SWORDLESS_SHOULDERS.indexOf(shoulder) >= 0)) {
+      shoulder = null;
+      refShoulder = null;
+    }
     var look = { body: f[1], outfit: outfit, gear: gear, fill: src.palette[Number(f[3])] || src.palette[0], outline: null, hat: gear === 'pirate-hat' };
     if (bonus) { look.fill = EX01.fill; look.outline = EX01.outline; }
     var recipes = art.recipes || {};
@@ -241,6 +272,7 @@ const boardScriptSource = `(function () {
     else if (reserve) look.fill = reserve;
     if (back) look.back = back;
     if (shoulder) look.shoulder = shoulder;
+    if (hand) look.hand = hand;
     if (f[0] === '3') {
       var variants = f[6].split(',');
       ids.forEach(function (id, index) {
@@ -248,8 +280,10 @@ const boardScriptSource = `(function () {
         var paint = catalogValue(recipes.gear, variants[index]);
         if (!Array.isArray(allowed) || allowed.indexOf(variants[index]) < 0 || !paint || !paint.line) return;
         // This code reward already has its authored red/blue vector paint, including the face mask.
-        if (id === gear && id !== 'madhouse-hat' && catalogValue(src.tint_masks, id)) look.gearPaint = paint;
-        if (id === back) look.backPaint = paint;
+        if (id === gear && ((id !== 'madhouse-hat' && catalogValue(src.tint_masks, id)) || (refHead && refHead.tintable))) look.gearPaint = paint;
+        if (id === back && (Array.isArray(catalogValue(fighter.back, id)) || (refBack && refBack.tintable))) look.backPaint = paint;
+        if (id === shoulder && refShoulder && refShoulder.tintable) look.shoulderPaint = paint;
+        if (id === hand && refHand && refHand.tintable) look.handPaint = paint;
       });
     }
     return look;
@@ -257,10 +291,20 @@ const boardScriptSource = `(function () {
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var avatarDefs = null;
+  function accBounds(m, size) {
+    var w = size[0], h = size[1];
+    var xs = [m[4], m[0] * w + m[4], m[2] * h + m[4], m[0] * w + m[2] * h + m[4]];
+    var ys = [m[5], m[1] * w + m[5], m[3] * h + m[5], m[1] * w + m[3] * h + m[5]];
+    return [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
+  }
+  function unionBounds(a, b) {
+    if (!a) return b;
+    return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+  }
   // One <symbol> per fighter, outfit and gear, built once from the baked markup.
   // The markup is our own static file, never player data.
-  function avatarSymbol(body, outfit, gear, back, painted, shoulder) {
-    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '') + (painted ? '-tint' : '') + (back ? '-' + back : '') + (shoulder ? '-' + shoulder : '');
+  function avatarSymbol(body, outfit, gear, back, painted, shoulder, hand) {
+    var id = 'av-' + body + (outfit === '1' ? '' : '-o' + outfit) + (gear ? '-' + gear : '') + (painted ? '-tint' : '') + (back ? '-' + back : '') + (shoulder ? '-' + shoulder : '') + (hand ? '-h-' + hand : '');
     if (document.getElementById(id)) return id;
     var f = avatarArt.fighters[body];
     var src = outfit === '1' ? f : f.outfits[outfit];
@@ -273,12 +317,54 @@ const boardScriptSource = `(function () {
           '<g style="filter:var(--gear-glow,none)"><g clip-path="url(#' + mask + ')">' + colored + '</g></g>';
       });
     }
-    var markup = ((catalogValue(f.back, back) || []).join('') + (catalogValue(f.shoulder, shoulder) || []).join('') + src.parts.map(function (part) { return part === '' ? head.shift() : part; }).join(''))
+    var refBehind = [], refNeck = [], refHead = [], refFront = [];
+    var compBox = null, tallBox = null, refIndex = 0;
+    var glowVars = { head: '--rh-glow', back: '--rb-glow', shoulder: '--rs-glow', hand: '--rn-glow' };
+    [[gear, 'head'], [back, 'back'], [shoulder, 'shoulder'], [hand, 'hand']].forEach(function (pair) {
+      var acc = pair[0] && refAccessory(avatarArt, src, pair[0], pair[1]);
+      if (!acc) return;
+      var glowVar = acc.tintable ? glowVars[acc.slot] : null;
+      acc.components.forEach(function (comp) {
+        var m = src.ref_fits[comp.id];
+        var inner = comp.svg.split('{id}').join('{id}ra' + (refIndex++) + '-');
+        var piece = '<g transform="matrix(' + m.join(' ') + ')">' + inner + '</g>';
+        if (glowVar) piece = '<g style="filter:var(' + glowVar + ',none)">' + piece + '</g>';
+        var layer = comp.layer;
+        if (layer === 'behind_body') layer = src.front_behind ? 'front' : 'behind';
+        if (layer === 'behind') refBehind.push(piece);
+        else if (layer === 'neck') refNeck.push(piece);
+        else if (layer === 'head') refHead.push(piece);
+        else refFront.push(piece);
+        var rect = accBounds(m, comp.size);
+        if (acc.companion) compBox = unionBounds(compBox, rect);
+        if (acc.tall) tallBox = unionBounds(tallBox, rect);
+      });
+    });
+    var firstHead = src.parts.indexOf('');
+    var lastHead = src.parts.lastIndexOf('');
+    var bodyMarkup = src.parts.map(function (part, i) {
+      var chunk = part === '' ? head.shift() : part;
+      if (i === firstHead && refNeck.length) chunk = refNeck.join('') + chunk;
+      if (i === lastHead && refHead.length) chunk = chunk + refHead.join('');
+      return chunk;
+    }).join('');
+    var markup = ((catalogValue(f.back, back) || []).join('') + (catalogValue(f.shoulder, shoulder) || []).join('') + refBehind.join('') + bodyMarkup + refFront.join(''))
       .split('{id}').join(id + '-');
+    var side = f.box[2];
+    var dx = 0, dy = 0, inset = side * 4 / 140;
+    if (compBox) {
+      var lower = Math.max(compBox[2] + inset - side, side / 2 + inset - side);
+      var upper = Math.min(compBox[0] - inset, side / 2 - inset);
+      if (lower <= upper) dx = Math.min(Math.max(0, lower), upper);
+    }
+    if (tallBox) {
+      var need = -(tallBox[1] - inset);
+      if (need > 0) dy = -Math.min(need, Math.max(0, side / 2 - inset));
+    }
     var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + markup + '</svg>', 'image/svg+xml');
     var symbol = document.createElementNS(SVG_NS, 'symbol');
     symbol.setAttribute('id', id);
-    symbol.setAttribute('viewBox', '0 0 ' + f.box[2] + ' ' + f.box[2]);
+    symbol.setAttribute('viewBox', (dx ? dx.toFixed(2) : '0') + ' ' + (dy ? dy.toFixed(2) : '0') + ' ' + side + ' ' + side);
     Array.prototype.slice.call(doc.documentElement.childNodes).forEach(function (n) {
       symbol.appendChild(document.importNode(n, true));
     });
@@ -312,6 +398,7 @@ const boardScriptSource = `(function () {
     tile.style.setProperty('--c', rgb(look.fill, 1));
     if (!avatarArt || !avatarArt.fighters[look.body]) return;
     var f = avatarArt.fighters[look.body];
+    var src = (look.outfit && look.outfit !== '1' && catalogValue(f.outfits, look.outfit)) || f;
     var svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 ' + f.box[2] + ' ' + f.box[2]);
     svg.setAttribute('aria-hidden', 'true');
@@ -326,8 +413,20 @@ const boardScriptSource = `(function () {
       svg.style.setProperty('--bo' + i, rgb(bp ? bp.edge || bp.line : look.outline || look.fill, level));
     });
     if (look.gearPaint && look.gearPaint.glow) svg.style.setProperty('--gear-glow', 'drop-shadow(0 0 2.5px ' + rgb(look.gearPaint.edge || look.gearPaint.line, 1) + ')');
+    function setRefTint(prefix, paint) {
+      if (!paint) return;
+      var c = paint.edge || paint.line;
+      svg.style.setProperty('--' + prefix + '0', rgb(c, 22 / 255));
+      svg.style.setProperty('--' + prefix + '1', rgb(c, 1));
+      if (paint.glow) svg.style.setProperty('--' + prefix + '-glow', 'drop-shadow(0 0 2.5px ' + rgb(c, 1) + ')');
+    }
+    if (look.gearPaint && refAccessory(avatarArt, src, look.gear, 'head')) setRefTint('rh', look.gearPaint);
+    if (look.backPaint && refAccessory(avatarArt, src, look.back, 'back')) setRefTint('rb', look.backPaint);
+    if (look.shoulderPaint && refAccessory(avatarArt, src, look.shoulder, 'shoulder')) setRefTint('rs', look.shoulderPaint);
+    if (look.handPaint && refAccessory(avatarArt, src, look.hand, 'hand')) setRefTint('rn', look.handPaint);
+    var kitPainted = !!(look.gearPaint && catalogValue(src.tint_masks, look.gear));
     var use = document.createElementNS(SVG_NS, 'use');
-    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear, look.back, !!look.gearPaint, look.shoulder));
+    use.setAttribute('href', '#' + avatarSymbol(look.body, look.outfit || '1', look.gear, look.back, kitPainted, look.shoulder, look.hand));
     svg.appendChild(use);
     tile.textContent = '';
     tile.appendChild(svg);
@@ -585,7 +684,7 @@ var scriptHash = func() string {
 // number to the far right (start with Ver .01) for each revision"; 2026-10-12: bump on
 // every merge). Deliberately NOT the build sha: one merge is one revision, however many
 // pushes it took.
-const pageVersion = ".60"
+const pageVersion = ".61"
 
 // indexHead is the page up to the opening <script>; indexTail closes it. Colours are
 // Controller Tester's default Phosphor Wave palette (CTCore/Theme.swift).
