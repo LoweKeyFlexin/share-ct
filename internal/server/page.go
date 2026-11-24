@@ -204,7 +204,7 @@ const boardScriptSource = `(function () {
   var AVATAR_V3 = /^3:[a-z0-9-]{1,32}:[1-9]:[0-9]:[a-z0-9-]{1,32}(,[a-z0-9-]{1,32}){0,3}:[a-z0-9-]{0,32}:[a-z0-9-]{1,3}(,[a-z0-9-]{1,3}){0,3}$/;
 
   var BACK_SWORDS = ['katana', 'greatsword', 'bokken', 'fishbone-saber', 'candy-cane-sword', 'trident-sword'];
-  var SWORDLESS_SHOULDERS = ['lunch-break'];
+  var SWORDLESS_SHOULDERS = ['lunch-break', 'charcoal-cat'];
 
   // The head markup an item draws on one outfit's art (src = the fighter for Outfit 1, or
   // one of its outfits), or null when that art has none.

@@ -172,9 +172,15 @@ test('charcoal shoulder cat preserves both outfits, head/back gear and independe
     for(const color of ['#14121a','#6e6878','#8fe36b','#08070c'])assert(paths.includes(color),color);
     assert(!paths.includes('var(--'),'cat is fixed paint, not a theme recipe');
   }
+  const withHead=bakedLook('3:puppet:2:0:pirate-hat,charcoal-cat::p1,c');
+  assert.equal(withHead.gear,'pirate-hat');
+  assert.equal(withHead.shoulder,'charcoal-cat');
+  assert.deepEqual(withHead.gearPaint.line,[67,217,255]);
+  assert.deepEqual(withHead.fill,baked.fighters.puppet.outfits['2'].palette[0]);
+  // Native b278 rule (CTReferenceCosmetics.swordlessShoulders): back swords clear charcoal-cat.
   const combined=bakedLook('3:puppet:2:0:pirate-hat,katana,charcoal-cat::p1,w0,c');
   assert.equal(combined.gear,'pirate-hat'); assert.equal(combined.back,'katana');
-  assert.equal(combined.shoulder,'charcoal-cat');
+  assert.equal(combined.shoulder,undefined);
   assert.deepEqual(combined.gearPaint.line,[67,217,255]);
   assert.deepEqual(combined.backPaint.line,[167,185,205]);
   assert.deepEqual(combined.fill,baked.fighters.puppet.outfits['2'].palette[0]);
@@ -258,7 +264,7 @@ test('live Share CT descriptors, v3 ReferenceGear tinting, and conflict rules ma
   assert.equal(bakedLook('3:puppet:1:0:pocket-ghost::l').shoulderPaint, undefined);
   assert.equal(bakedLook('3:puppet:1:0:witching-hour::l').gearPaint, undefined);
 
-  // Native conflicts: Witching Hour suppresses shoulder; back swords suppress lunch-break.
+  // Native conflicts: Witching Hour suppresses shoulder; back swords suppress lunch-break and charcoal-cat.
   const witch = bakedLook('1:puppet:1:0:witching-hour,pocket-ghost');
   assert.equal(witch.gear, 'witching-hour');
   assert.equal(witch.shoulder, undefined);
@@ -268,6 +274,14 @@ test('live Share CT descriptors, v3 ReferenceGear tinting, and conflict rules ma
   const tridentLunch = bakedLook('1:puppet:1:0:trident-sword,lunch-break');
   assert.equal(tridentLunch.back, 'trident-sword');
   assert.equal(tridentLunch.shoulder, undefined);
+  const soloCat = bakedLook('1:puppet:1:0:charcoal-cat');
+  assert.equal(soloCat.shoulder, 'charcoal-cat');
+  const swordCat = bakedLook('1:puppet:1:0:katana,charcoal-cat');
+  assert.equal(swordCat.back, 'katana');
+  assert.equal(swordCat.shoulder, undefined);
+  const tridentCat = bakedLook('1:puppet:1:0:trident-sword,charcoal-cat');
+  assert.equal(tridentCat.back, 'trident-sword');
+  assert.equal(tridentCat.shoulder, undefined);
 });
 
 test('ReferenceGear symbols have unique clip IDs, proper layering, and framing shifts', () => {
