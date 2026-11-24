@@ -209,3 +209,121 @@ test('complete gear and limited look above the old 64-byte cap keeps its paint',
   assert.deepEqual(resolved.fill, [157,107,255]);
   delete art.recipes;
 });
+
+test('all 77 ReferenceGear accessories resolve across all 14 fighters and both outfits', () => {
+  const ids = Object.keys(baked.accessories || {});
+  assert.equal(ids.length, 77);
+  for (const body of Object.keys(baked.fighters)) {
+    for (const outfit of ['1', '2']) {
+      for (const id of ids) {
+        const acc = baked.accessories[id];
+        const resolved = bakedLook(`1:${body}:${outfit}:0:${id}`);
+        assert.equal(resolved.body, body);
+        assert.equal(resolved.outfit, outfit);
+        if (acc.slot === 'head') assert.equal(resolved.gear, id, `${body} o${outfit} ${id}`);
+        if (acc.slot === 'back') assert.equal(resolved.back, id, `${body} o${outfit} ${id}`);
+        if (acc.slot === 'shoulder') assert.equal(resolved.shoulder, id, `${body} o${outfit} ${id}`);
+        if (acc.slot === 'hand') assert.equal(resolved.hand, id, `${body} o${outfit} ${id}`);
+      }
+    }
+  }
+});
+
+test('live Share CT descriptors, v3 ReferenceGear tinting, and conflict rules match native', () => {
+  // Live A13 banana-guard head accessory.
+  const banana = bakedLook('1:puppet-heavy:1:7:banana-guard');
+  assert.equal(banana.body, 'puppet-heavy');
+  assert.equal(banana.gear, 'banana-guard');
+  assert.equal(banana.hat, false);
+
+  // Live v3 tinted shoulder accessory (lunch-break with Just Parry gold edge).
+  const lunch = bakedLook('3:puppet:2:0:lunch-break:t2b6ce2a90:r');
+  assert.equal(lunch.body, 'puppet');
+  assert.equal(lunch.outfit, '2');
+  assert.equal(lunch.shoulder, 'lunch-break');
+  assert.deepEqual(lunch.shoulderPaint.edge, [255, 201, 60]);
+
+  // Live multi-slot head + back + shoulder combo.
+  const combo = bakedLook('1:puppet-heavy:2:8:lightning-crown,greatsword,pocket-ghost');
+  assert.equal(combo.gear, 'lightning-crown');
+  assert.equal(combo.back, 'greatsword');
+  assert.equal(combo.shoulder, 'pocket-ghost');
+
+  // Tintable ReferenceGear items take v3 paints per slot; artwork/fixed items keep authored colours.
+  assert.deepEqual(bakedLook('3:puppet-heavy:1:7:banana-guard::l').gearPaint.edge, [255, 201, 60]);
+  assert.deepEqual(bakedLook('3:puppet:1:0:trident-sword::r').backPaint.edge, [255, 201, 60]);
+  assert.deepEqual(bakedLook('3:puppet:1:0:hook-glove::r').handPaint.edge, [255, 201, 60]);
+  assert.equal(bakedLook('3:puppet:1:0:chef-hat::l').gearPaint, undefined);
+  assert.equal(bakedLook('3:puppet:1:0:axolotl::l').shoulderPaint, undefined);
+  assert.equal(bakedLook('3:puppet:1:0:pocket-ghost::l').shoulderPaint, undefined);
+  assert.equal(bakedLook('3:puppet:1:0:witching-hour::l').gearPaint, undefined);
+
+  // Native conflicts: Witching Hour suppresses shoulder; back swords suppress lunch-break.
+  const witch = bakedLook('1:puppet:1:0:witching-hour,pocket-ghost');
+  assert.equal(witch.gear, 'witching-hour');
+  assert.equal(witch.shoulder, undefined);
+  const swordLunch = bakedLook('1:puppet:1:0:katana,lunch-break');
+  assert.equal(swordLunch.back, 'katana');
+  assert.equal(swordLunch.shoulder, undefined);
+  const tridentLunch = bakedLook('1:puppet:1:0:trident-sword,lunch-break');
+  assert.equal(tridentLunch.back, 'trident-sword');
+  assert.equal(tridentLunch.shoulder, undefined);
+});
+
+test('ReferenceGear symbols have unique clip IDs, proper layering, and framing shifts', () => {
+  const markups = [];
+  const viewBoxes = new Map();
+  const symbols = new Map();
+  const node = () => {
+    const attrs = {};
+    return {
+      attrs,
+      setAttribute(key, value) {
+        attrs[key] = value;
+        if (key === 'id') symbols.set(value, this);
+        if (key === 'viewBox' && attrs.id) viewBoxes.set(attrs.id, value);
+      },
+      appendChild() {}
+    };
+  };
+  const render = vm.createContext({
+    avatarArt: baked,
+    document: { getElementById: id => symbols.get(id), createElementNS: node, importNode: n => n, body: { appendChild() {} } },
+    DOMParser: class { parseFromString(markup) { markups.push(markup); return { documentElement: { childNodes: [] } }; } }
+  });
+  vm.runInContext(source.slice(start, source.indexOf('  function avatarTile', start)) + '\nthis.render=avatarSymbol;', render);
+
+  const chefId = render.render('puppet', '1', 'chef-hat', null, false, null, null);
+  const ghostId = render.render('puppet-heavy', '2', 'lightning-crown', 'greatsword', false, 'pocket-ghost', null);
+  const witchId = render.render('puppet', '1', 'witching-hour', null, false, null, null);
+  const oniO1 = render.render('puppet-oni', '1', null, null, false, 'axolotl', null);
+  const oniO2 = render.render('puppet-oni', '2', null, null, false, 'axolotl', null);
+  render.render('puppet', '1', 'banana-guard', 'trident-sword', false, 'lava-lamp', 'hook-glove');
+
+  // Tall hat shifts viewBox y negative; right-side companion shifts viewBox x positive.
+  const chefVB = viewBoxes.get(chefId).split(' ').map(Number);
+  assert.ok(chefVB[1] < 0, 'tall chef-hat must shift viewBox up: ' + viewBoxes.get(chefId));
+  const ghostVB = viewBoxes.get(ghostId).split(' ').map(Number);
+  assert.ok(ghostVB[0] > 0, 'pocket-ghost companion must shift viewBox right: ' + viewBoxes.get(ghostId));
+
+  // Layering: witching-hour rear sits behind body, hat+bat sit after head slots.
+  assert.ok(symbols.has(witchId));
+  const witchMarkup = markups[2];
+  assert.ok(witchMarkup.indexOf('#CE78FF') < witchMarkup.indexOf('var(--m'), 'rear brim draws behind body');
+  assert.ok(witchMarkup.lastIndexOf('#CE78FF') > witchMarkup.indexOf('var(--m'), 'front hat/bat draws over head');
+
+  // behindBodyFrontFits moves axolotl behind on Oni Outfit 1 and in front on Oni Outfit 2.
+  assert.ok(symbols.has(oniO1) && symbols.has(oniO2));
+  const axoFill = baked.accessories.axolotl.components[0].svg.match(/fill="(#[0-9A-F]{6})"/)[1];
+  const axoO1 = markups[3], axoO2 = markups[4];
+  assert.ok(axoO1.indexOf(axoFill) >= 0 && axoO1.indexOf(axoFill) < axoO1.indexOf('var(--m'), 'axolotl draws behind body on Oni o1');
+  assert.ok(axoO2.indexOf(axoFill) > axoO2.lastIndexOf('var(--m'), 'axolotl draws in front on Oni o2');
+
+  const all = markups.join('');
+  assert.ok(!all.includes('{id}'), 'no unexpanded {id} placeholders');
+  const ids = [...all.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+  assert.equal(new Set(ids).size, ids.length, 'all SVG clip IDs must be unique');
+  for (const match of all.matchAll(/url\(#([^)]*)\)/g)) {
+    assert.ok(ids.includes(match[1]), 'dangling SVG url(#' + match[1] + ')');
+  }
+});
