@@ -99,6 +99,7 @@ type clip struct {
 
 // VecLayer and VecSlot are one slot of a `parts.vec.json` (kit PuppetPartVectors.swift).
 type VecLayer struct {
+	Shape   []float64   `json:"shape"`
 	Fill    *string     `json:"fill"`
 	Opacity *float64    `json:"opacity"`
 	Stroke  *string     `json:"stroke"`
@@ -414,9 +415,10 @@ func frame0(r *rig, c clip) ([]*offset, [][]int, error) {
 	return offs, order, nil
 }
 
-// resolve returns each slot's image-pixel → canvas transform and the draw sequence, with
+// resolve returns each slot's image-pixel → canvas transform, the draw sequence,
+// each bone's canvas transform, and each bone's frame-0 length scale, with
 // the rig root at the canvas origin, one canvas point per design unit, facing right.
-func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int, []Affine) {
+func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int, []Affine, []float64) {
 	rigToCanvas := Affine{1, 0, 0, -1, 0, 0}
 	boneTo := make([]Affine, len(r.bones))
 	lengths := make([]float64, len(r.bones))
@@ -499,7 +501,7 @@ func (r *rig) resolve(offs []*offset, order [][]int) ([]Affine, []int, []Affine)
 			}
 		}
 	}
-	return toCanvas, seq, boneTo
+	return toCanvas, seq, boneTo, lengths
 }
 
 // ---------------------------------------------------------------------------------------
@@ -517,6 +519,9 @@ type Inputs struct {
 	// Cosmetics is the kit's exported cosmetics folder (KitResources/cosmetics): Outfit 2
 	// and the kit's head gear (Knight and Diving Helmets). Empty or absent: neither is baked.
 	Cosmetics string
+	// ReferenceGear is fgc's Sources/CTDrillsDiagnostic/ReferenceGear directory: app-owned
+	// vector and artwork cosmetics with explicit per-body/outfit fits. Empty: omitted.
+	ReferenceGear string
 }
 
 // Fighter is one drawable roster entry: its palette, its crop and its headshot paths.
@@ -548,22 +553,29 @@ type Fighter struct {
 	// own shared markup (an outfit redraws body parts) and their heads, bare and with gear.
 	// The crop (Box) and the levels are the fighter's, shared by every outfit, as in the app.
 	Outfits map[string]OutfitArt `json:"outfits,omitempty"`
+	// RefFits maps each ReferenceGear component id to its crop-relative affine matrix
+	// [a, b, c, d, tx, ty] on Outfit 1; FrontBehind moves behind_body items in front.
+	RefFits     map[string][6]float64 `json:"ref_fits,omitempty"`
+	FrontBehind bool                  `json:"front_behind,omitempty"`
 }
 
 // OutfitArt is one outfit of one fighter.
 type OutfitArt struct {
-	Palette  [][3]int            `json:"palette"`
-	Parts    []string            `json:"parts"`
-	Head     []string            `json:"head"`
-	Gear     map[string][]string `json:"gear,omitempty"`
-	TintGear map[string][]string `json:"tint_gear,omitempty"`
+	Palette     [][3]int              `json:"palette"`
+	Parts       []string              `json:"parts"`
+	Head        []string              `json:"head"`
+	Gear        map[string][]string   `json:"gear,omitempty"`
+	TintGear    map[string][]string   `json:"tint_gear,omitempty"`
+	RefFits     map[string][6]float64 `json:"ref_fits,omitempty"`
+	FrontBehind bool                  `json:"front_behind,omitempty"`
 }
 
 // Output is the whole static asset.
 type Output struct {
-	Format   string             `json:"format"`
-	Fighters map[string]Fighter `json:"fighters"`
-	Recipes  json.RawMessage    `json:"recipes,omitempty"`
+	Format      string               `json:"format"`
+	Fighters    map[string]Fighter   `json:"fighters"`
+	Accessories map[string]Accessory `json:"accessories,omitempty"`
+	Recipes     json.RawMessage      `json:"recipes,omitempty"`
 }
 
 // Bake produces the asset. It is deterministic: same inputs, same bytes.
@@ -589,6 +601,8 @@ func Bake(in Inputs) (*Output, error) {
 		return nil, err
 	}
 	out := &Output{Format: "ct-board-avatars-1", Fighters: map[string]Fighter{}}
+	barePoses := map[string]*posed{}
+	fighterBoxes := map[string]Rect{}
 	var ref character
 	if err := readJSON(filepath.Join(in.KitResources, referenceBodyID, "puppet.json"), &ref); err != nil {
 		return nil, err
@@ -679,6 +693,13 @@ func Bake(in Inputs) (*Output, error) {
 		}
 		fi.Levels = w.levelList
 		out.Fighters[f.BodyID] = fi
+		barePoses[f.BodyID] = bare
+		fighterBoxes[f.BodyID] = box
+	}
+	if in.ReferenceGear != "" {
+		if err := bakeReferenceGear(in.ReferenceGear, out, barePoses, fighterBoxes); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -702,11 +723,12 @@ func Crop(bareFigure, head Rect, hatHead *Rect, unitsPerPx float64) Rect {
 }
 
 type posed struct {
-	r            *rig
-	toCanvas     []Affine
-	boneToCanvas []Affine
-	seq          []int
-	bounds       Rect // union of every drawn part's image rect (the app's clip.bounds)
+	r                *rig
+	toCanvas         []Affine
+	boneToCanvas     []Affine
+	boneLengthScales []float64
+	seq              []int
+	bounds           Rect // union of every drawn part's image rect (the app's clip.bounds)
 }
 
 // pose resolves idle frame 0, with `gear` (slot id → replacement art) dressed in the way
@@ -735,8 +757,8 @@ func pose(sk skeleton, ch character, idle clip, gear map[string]gearArt) (*posed
 	if err != nil {
 		return nil, err
 	}
-	toCanvas, seq, boneTo := r.resolve(offs, order)
-	p := &posed{r: r, toCanvas: toCanvas, boneToCanvas: boneTo, seq: seq, bounds: emptyRect()}
+	toCanvas, seq, boneTo, lengths := r.resolve(offs, order)
+	p := &posed{r: r, toCanvas: toCanvas, boneToCanvas: boneTo, boneLengthScales: lengths, seq: seq, bounds: emptyRect()}
 	for _, s := range seq {
 		p.bounds = p.bounds.union(p.partRect(s))
 	}

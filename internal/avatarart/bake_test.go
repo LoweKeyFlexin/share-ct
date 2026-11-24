@@ -186,11 +186,12 @@ func TestCommittedBakeMatchesSources(t *testing.T) {
 		t.Skip("set CT_KIT and CT_FGC to check the committed bake against the sources")
 	}
 	got, err := BakeJSON(Inputs{
-		KitResources: filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation"),
-		GearDir:      filepath.Join(fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
-		Roster:       filepath.Join(fgc, "CTCore/FighterRoster.swift"),
-		Colours:      filepath.Join(fgc, "CTCore/DrillsColourCatalog.swift"),
-		Cosmetics:    cosmeticsDir(kit),
+		KitResources:  filepath.Join(kit, "PuppetPresentation/Resources/PuppetPresentation"),
+		GearDir:       filepath.Join(fgc, "Sources/CTDrillsDiagnostic/Gear/pirate-hat"),
+		Roster:        filepath.Join(fgc, "CTCore/FighterRoster.swift"),
+		Colours:       filepath.Join(fgc, "CTCore/DrillsColourCatalog.swift"),
+		Cosmetics:     cosmeticsDir(kit),
+		ReferenceGear: filepath.Join(fgc, "Sources/CTDrillsDiagnostic/ReferenceGear"),
 	})
 	if err != nil {
 		t.Fatal(err)
