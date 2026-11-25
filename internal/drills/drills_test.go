@@ -169,3 +169,22 @@ func TestAllInputDevicesCompeteOnOneDrillBoard(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceMetadataAcceptsLongNamesAndCapsUTF8Bytes(t *testing.T) {
+	const wired = "Performance Designed Products Victrix Pro BFG Wired Controller for PS5"
+	atLimit := strings.Repeat("é", 64)
+	for _, tc := range []struct {
+		label, model, reason string
+	}{
+		{wired, "Android phone", ""},
+		{atLimit, atLimit, ""},
+		{atLimit + "a", "Android phone", "device"},
+		{wired, atLimit + "a", "device"},
+	} {
+		input := req("device-metadata", "whiff-punish", 6)
+		input.DeviceLabel, input.DeviceModel = tc.label, tc.model
+		if reason := validate(input); reason != tc.reason {
+			t.Errorf("label bytes=%d, model bytes=%d: reason=%q, want %q", len(tc.label), len(tc.model), reason, tc.reason)
+		}
+	}
+}

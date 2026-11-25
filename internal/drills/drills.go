@@ -18,6 +18,8 @@ import (
 	"github.com/LoweKeyFlexin/share-ct/internal/ratelimit"
 )
 
+const maxDeviceLen = 128
+
 type Request struct {
 	Mode         string `json:"mode,omitempty"`
 	*ArcadeStats `json:",omitempty"`
@@ -142,7 +144,7 @@ func validate(r Request) string {
 		return "platform"
 	case strings.TrimSpace(r.AppBuild) == "" || len(r.AppBuild) > 32:
 		return "app_build"
-	case len(r.DeviceModel) > 64 || len(r.DeviceLabel) > 64:
+	case len(r.DeviceModel) > maxDeviceLen || len(r.DeviceLabel) > maxDeviceLen:
 		return "device"
 	}
 	return ""
