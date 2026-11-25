@@ -197,7 +197,7 @@ func TestSubmitRejects(t *testing.T) {
 		{"unknown source", func(b map[string]any) { b["source"] = "mouse" }, "source"},
 		{"unknown platform", func(b map[string]any) { b["platform"] = "web" }, "platform"},
 		{"no app build", func(b map[string]any) { b["app_build"] = "" }, "app_build"},
-		{"device label too long", func(b map[string]any) { b["device_label"] = strings.Repeat("x", 65) }, "device"},
+		{"device label too long", func(b map[string]any) { b["device_label"] = strings.Repeat("x", maxDeviceLen+1) }, "device"},
 	}
 	for _, c := range cases {
 		hs.now = hs.now.Add(time.Minute) // rejections count against the per-player limit too
@@ -472,6 +472,30 @@ func TestBoardPlayerCountPrecedesLimitAndHonorsSourceAndWindow(t *testing.T) {
 		}
 		if entries, ok := body["entries"].([]any); ok && len(entries) > 1 {
 			t.Errorf("%s exceeded limit", tc.path)
+		}
+	}
+}
+
+func TestDeviceMetadataAcceptsLongNamesAndCapsUTF8Bytes(t *testing.T) {
+	const wired = "Performance Designed Products Victrix Pro BFG Wired Controller for PS5"
+	atLimit := strings.Repeat("é", 64)
+	for _, tc := range []struct {
+		label, model, reason string
+	}{
+		{wired, "Android phone", ""},
+		{atLimit, atLimit, ""},
+		{atLimit + "a", "Android phone", "device"},
+		{wired, atLimit + "a", "device"},
+	} {
+		attempts := []float64{200, 205, 210}
+		score := ScoreTrial(attempts, 0)
+		input := SubmitRequest{
+			ClientID: "device-metadata", Source: "pad", Platform: "android", AppBuild: "test",
+			AttemptsMs: attempts, BestMs: score.BestMs, Score: score.Score,
+			DeviceLabel: tc.label, DeviceModel: tc.model,
+		}
+		if _, reason := Validate(&input); reason != tc.reason {
+			t.Errorf("label bytes=%d, model bytes=%d: reason=%q, want %q", len(tc.label), len(tc.model), reason, tc.reason)
 		}
 	}
 }

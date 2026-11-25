@@ -26,7 +26,7 @@ const (
 
 	maxClientIDLen = 64
 	maxAppBuildLen = 32
-	maxDeviceLen   = 64
+	maxDeviceLen   = 128
 
 	// bestMsTolerance is how far the client's best_ms may sit from min(attempts_ms):
 	// the same Double travelled through JSON, so only formatting noise is allowed.
